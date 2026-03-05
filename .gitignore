@@ -1,0 +1,5 @@
+# Compiled binary
+nanocode
+
+# Temp files from atomic writes
+*.nanocode.tmp
