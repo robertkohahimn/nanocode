@@ -133,6 +133,9 @@ func run() error {
 		}
 
 		if err := eng.Resume(ctx, sessionID, line, onEvent); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
 			fmt.Fprintf(os.Stderr, "\nerror: %v\n", err)
 		}
 		fmt.Println()
@@ -144,7 +147,7 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--session":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				sessionID = args[i]
 			} else {
@@ -153,7 +156,7 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 		case "--list":
 			listMode = true
 		case "--model":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				modelOverride = args[i]
 			} else {
