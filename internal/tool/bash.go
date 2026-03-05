@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type BashTool struct {
@@ -107,7 +107,10 @@ func (t *BashTool) defaultConfirm(command string) bool {
 	if reader == nil {
 		reader = bufio.NewReader(os.Stdin)
 	}
-	line, _ := reader.ReadString('\n')
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false // fail closed on read error
+	}
 	line = strings.TrimSpace(strings.ToLower(line))
 	return line == "" || line == "y" || line == "yes"
 }

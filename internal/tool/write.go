@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type WriteTool struct {
@@ -57,13 +57,27 @@ func (t *WriteTool) Execute(ctx context.Context, input json.RawMessage) (string,
 		perm = info.Mode().Perm()
 	}
 
-	// Write atomically: temp file + rename
-	tmpPath := in.FilePath + ".nanocode.tmp"
-	if err := os.WriteFile(tmpPath, []byte(in.Content), perm); err != nil {
+	// Write atomically: unique temp file + rename
+	tmp, err := os.CreateTemp(dir, filepath.Base(in.FilePath)+".nanocode.*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write([]byte(in.Content)); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("writing temp file: %w", err)
 	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("setting permissions: %w", err)
+	}
 	if err := os.Rename(tmpPath, in.FilePath); err != nil {
-		os.Remove(tmpPath) // clean up on failure
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("renaming temp file: %w", err)
 	}
 

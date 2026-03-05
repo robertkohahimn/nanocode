@@ -199,7 +199,7 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 
 		if hasToolResults {
 			for _, cb := range m.Content {
-				if cb.Type == "tool_result" {
+				if cb.Type == "tool_result" && cb.ToolResult != nil {
 					messages = append(messages, map[string]string{
 						"role":         "tool",
 						"tool_call_id": cb.ToolResult.ToolCallID,
@@ -224,7 +224,7 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 			for _, cb := range m.Content {
 				if cb.Type == "text" {
 					textParts = append(textParts, cb.Text)
-				} else if cb.Type == "tool_use" {
+				} else if cb.Type == "tool_use" && cb.ToolCall != nil {
 					toolCalls = append(toolCalls, map[string]interface{}{
 						"id":   cb.ToolCall.ID,
 						"type": "function",

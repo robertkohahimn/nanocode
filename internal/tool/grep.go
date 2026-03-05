@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type GrepTool struct{}
@@ -77,7 +77,8 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	if !info.IsDir() {
 		results = searchFile(root, root, re, maxMatches)
 	} else {
-		filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		var limitReached bool
+		walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				if d != nil && d.IsDir() && SkipDir(d.Name()) {
 					return filepath.SkipDir
@@ -101,10 +102,14 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 			results = append(results, found...)
 
 			if len(results) >= maxMatches {
-				return fmt.Errorf("limit")
+				limitReached = true
+				return filepath.SkipAll
 			}
 			return nil
 		})
+		if walkErr != nil && !limitReached {
+			return "", fmt.Errorf("walking directory: %w", walkErr)
+		}
 	}
 
 	if len(results) == 0 {

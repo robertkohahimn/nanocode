@@ -85,6 +85,8 @@ func OpenMemory() (*SQLiteStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Pin to one connection so all queries share the same in-memory database.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()
 		return nil, err
@@ -145,6 +147,9 @@ func (s *SQLiteStore) ListSessions(ctx context.Context, project string, limit in
 }
 
 func (s *SQLiteStore) AppendMessage(ctx context.Context, sessionID string, msg *MessageRecord) error {
+	if msg == nil {
+		return fmt.Errorf("cannot append nil message")
+	}
 	id := msg.ID
 	if id == "" {
 		id = uuid.New().String()

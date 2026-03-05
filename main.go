@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nanocode/nanocode/internal/config"
-	"github.com/nanocode/nanocode/internal/engine"
-	"github.com/nanocode/nanocode/internal/provider"
-	"github.com/nanocode/nanocode/internal/store"
+	"github.com/robertkohahimn/nanocode/internal/config"
+	"github.com/robertkohahimn/nanocode/internal/engine"
+	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/store"
 )
 
 func main() {

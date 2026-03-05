@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type GlobTool struct{}
@@ -53,10 +53,11 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 
 	const maxResults = 200
 	var matches []string
+	var limitReached bool
 
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return nil // skip individual entry errors
 		}
 		if d.IsDir() && SkipDir(d.Name()) {
 			return filepath.SkipDir
@@ -69,11 +70,15 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		if matchGlob(in.Pattern, rel) {
 			matches = append(matches, rel)
 			if len(matches) >= maxResults {
-				return fmt.Errorf("limit reached")
+				limitReached = true
+				return filepath.SkipAll
 			}
 		}
 		return nil
 	})
+	if walkErr != nil && !limitReached {
+		return "", fmt.Errorf("walking directory: %w", walkErr)
+	}
 
 	sort.Strings(matches)
 
@@ -82,7 +87,7 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	}
 
 	result := strings.Join(matches, "\n")
-	if len(matches) >= maxResults {
+	if limitReached {
 		result += fmt.Sprintf("\n... (truncated at %d results)", maxResults)
 	}
 	return result, nil

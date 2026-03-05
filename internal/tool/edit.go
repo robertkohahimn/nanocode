@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type EditTool struct {
@@ -51,6 +51,10 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		return "", err
 	}
 
+	if in.OldString == "" {
+		return "", fmt.Errorf("old_string must not be empty")
+	}
+
 	data, err := os.ReadFile(in.FilePath)
 	if err != nil {
 		return "", fmt.Errorf("reading file: %w", err)
@@ -73,14 +77,29 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		newContent = strings.Replace(content, in.OldString, in.NewString, 1)
 	}
 
-	// Write atomically
+	// Write atomically with unique temp file
 	perm := os.FileMode(0644)
 	if info, err := os.Stat(in.FilePath); err == nil {
 		perm = info.Mode().Perm()
 	}
-	tmpPath := in.FilePath + ".nanocode.tmp"
-	if err := os.WriteFile(tmpPath, []byte(newContent), perm); err != nil {
+	dir := filepath.Dir(in.FilePath)
+	tmp, err := os.CreateTemp(dir, filepath.Base(in.FilePath)+".nanocode.*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write([]byte(newContent)); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("writing: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("setting permissions: %w", err)
 	}
 	if err := os.Rename(tmpPath, in.FilePath); err != nil {
 		os.Remove(tmpPath)

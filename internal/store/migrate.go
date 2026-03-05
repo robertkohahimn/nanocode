@@ -35,6 +35,10 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("reading schema version: %w", err)
 	}
 
+	if version > len(migrations) {
+		return fmt.Errorf("database schema version %d is newer than this binary supports (max %d); upgrade nanocode", version, len(migrations))
+	}
+
 	for i := version; i < len(migrations); i++ {
 		tx, err := db.Begin()
 		if err != nil {

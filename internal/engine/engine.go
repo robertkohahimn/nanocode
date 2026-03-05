@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/config"
-	"github.com/nanocode/nanocode/internal/provider"
-	"github.com/nanocode/nanocode/internal/store"
-	"github.com/nanocode/nanocode/internal/tool"
+	"github.com/robertkohahimn/nanocode/internal/config"
+	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/store"
+	"github.com/robertkohahimn/nanocode/internal/tool"
 )
 
 const maxIterations = 50
@@ -236,13 +236,14 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					continue
 				}
 				if inp.FilePath != "" {
-					fileEditCounts[inp.FilePath]++
-					if fileEditCounts[inp.FilePath] > maxFileEdits {
+					cleanedPath := filepath.Clean(inp.FilePath)
+					fileEditCounts[cleanedPath]++
+					if fileEditCounts[cleanedPath] > maxFileEdits {
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
 							ToolResult: &provider.ToolResult{
 								ToolCallID: tc.ID,
-								Content:    fmt.Sprintf("Doom loop detected: %s has been edited %d times. Stop and report to the user.", inp.FilePath, fileEditCounts[inp.FilePath]),
+								Content:    fmt.Sprintf("Doom loop detected: %s has been edited %d times. Stop and report to the user.", cleanedPath, fileEditCounts[cleanedPath]),
 								IsError:    true,
 							},
 						})

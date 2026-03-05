@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/nanocode/nanocode/internal/provider"
-	"github.com/nanocode/nanocode/internal/tool"
+	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/tool"
 )
 
 type mockTool struct {

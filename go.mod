@@ -1,4 +1,4 @@
-module github.com/nanocode/nanocode
+module github.com/robertkohahimn/nanocode
 
 go 1.25.1
 

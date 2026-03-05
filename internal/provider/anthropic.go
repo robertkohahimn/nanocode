@@ -123,6 +123,10 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("parsing content_block_start: %w", err)}
 				return
 			}
+			if block.Index < 0 {
+				ch <- Event{Type: EventError, Error: fmt.Errorf("invalid negative index %d in content_block_start", block.Index)}
+				return
+			}
 
 			for len(toolBuilders) <= block.Index {
 				toolBuilders = append(toolBuilders, nil)
@@ -152,6 +156,10 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("parsing content_block_delta: %w", err)}
 				return
 			}
+			if delta.Index < 0 {
+				ch <- Event{Type: EventError, Error: fmt.Errorf("invalid negative index %d in content_block_delta", delta.Index)}
+				return
+			}
 
 			if delta.Delta.Type == "text_delta" {
 				ch <- Event{Type: EventTextDelta, Text: delta.Delta.Text}
@@ -168,6 +176,10 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 			}
 			if err := json.Unmarshal([]byte(sse.Data), &stop); err != nil {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("parsing content_block_stop: %w", err)}
+				return
+			}
+			if stop.Index < 0 {
+				ch <- Event{Type: EventError, Error: fmt.Errorf("invalid negative index %d in content_block_stop", stop.Index)}
 				return
 			}
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 type contextKey string
@@ -47,6 +47,10 @@ func (t *SubagentTool) Definition() provider.ToolDef {
 }
 
 func (t *SubagentTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	if t.Runner == nil {
+		return "", fmt.Errorf("sub-agent tool not configured: nil Runner")
+	}
+
 	in, err := ParseInput[subagentInput](input)
 	if err != nil {
 		return "", fmt.Errorf("parsing input: %w", err)

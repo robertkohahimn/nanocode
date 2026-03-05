@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nanocode/nanocode/internal/provider"
-	"github.com/nanocode/nanocode/internal/tool"
+	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/tool"
 )
 
 // ToolRegistry manages the set of available tools.
@@ -47,6 +47,12 @@ func (r *ToolRegistry) Definitions() []provider.ToolDef {
 
 // Execute dispatches a tool call and returns the result.
 func (r *ToolRegistry) Execute(ctx context.Context, tc *provider.ToolCall) *provider.ToolResult {
+	if tc == nil {
+		return &provider.ToolResult{
+			Content: "nil tool call",
+			IsError: true,
+		}
+	}
 	t, ok := r.tools[tc.Name]
 	if !ok {
 		return &provider.ToolResult{

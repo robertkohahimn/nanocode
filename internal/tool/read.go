@@ -7,10 +7,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
-type ReadTool struct{}
+type ReadTool struct {
+	BaseDir string // restrict reads to this directory; empty = no restriction
+}
 
 type readInput struct {
 	FilePath string `json:"file_path"`
@@ -40,6 +42,10 @@ func (t *ReadTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	in, err := ParseInput[readInput](input)
 	if err != nil {
 		return "", fmt.Errorf("parsing input: %w", err)
+	}
+
+	if err := ValidatePath(in.FilePath, t.BaseDir); err != nil {
+		return "", err
 	}
 
 	data, err := os.ReadFile(in.FilePath)

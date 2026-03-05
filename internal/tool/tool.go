@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nanocode/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
 // Tool is the interface every built-in tool implements.
@@ -70,7 +70,21 @@ func ValidatePath(filePath, baseDir string) error {
 	if err != nil {
 		return fmt.Errorf("invalid base dir: %w", err)
 	}
-	if !strings.HasPrefix(abs, base+string(filepath.Separator)) && abs != base {
+
+	// Resolve symlinks to prevent symlink-based sandbox escapes.
+	// Resolve the parent directory of the target (the file may not exist yet).
+	resolvedDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return fmt.Errorf("resolving path: %w", err)
+	}
+	resolved := filepath.Join(resolvedDir, filepath.Base(abs))
+
+	resolvedBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return fmt.Errorf("resolving base dir: %w", err)
+	}
+
+	if !strings.HasPrefix(resolved, resolvedBase+string(filepath.Separator)) && resolved != resolvedBase {
 		return fmt.Errorf("path %s is outside project directory %s", filePath, baseDir)
 	}
 	return nil
