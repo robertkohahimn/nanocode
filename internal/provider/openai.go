@@ -191,7 +191,7 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 	for _, m := range req.Messages {
 		hasToolResults := false
 		for _, cb := range m.Content {
-			if cb.Type == "tool_result" {
+			if cb.Type == "tool_result" && cb.ToolResult != nil {
 				hasToolResults = true
 				break
 			}

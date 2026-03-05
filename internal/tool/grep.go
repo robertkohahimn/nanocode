@@ -98,8 +98,11 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	} else {
 		var limitReached bool
 		walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				if d != nil && d.IsDir() && SkipDir(d.Name()) {
+			if err != nil {
+				return nil // skip inaccessible entries
+			}
+			if d.IsDir() {
+				if SkipDir(d.Name()) {
 					return filepath.SkipDir
 				}
 				return nil

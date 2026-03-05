@@ -147,6 +147,8 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 			if i+1 < len(args) {
 				i++
 				sessionID = args[i]
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: --session requires a value")
 			}
 		case "--list":
 			listMode = true
@@ -154,6 +156,8 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 			if i+1 < len(args) {
 				i++
 				modelOverride = args[i]
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: --model requires a value")
 			}
 		default:
 			parts = append(parts, args[i])

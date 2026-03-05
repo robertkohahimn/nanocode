@@ -237,8 +237,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				}
 				if inp.FilePath != "" {
 					key := filepath.Clean(inp.FilePath)
-					if e.config.ProjectDir != "" && !filepath.IsAbs(key) {
-						key = filepath.Clean(filepath.Join(e.config.ProjectDir, key))
+					if cfg.ProjectDir != "" && !filepath.IsAbs(key) {
+						key = filepath.Clean(filepath.Join(cfg.ProjectDir, key))
 					}
 					fileEditCounts[key]++
 					if fileEditCounts[key] > maxFileEdits {

@@ -211,8 +211,18 @@ func (s *SQLiteStore) GetMessages(ctx context.Context, sessionID string) ([]Mess
 }
 
 func (s *SQLiteStore) UpdateSessionTitle(ctx context.Context, id, title string) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE sessions SET title = ? WHERE id = ?", title, id)
-	return err
+	result, err := s.db.ExecContext(ctx, "UPDATE sessions SET title = ? WHERE id = ?", title, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("session %s not found", id)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) Close() error {
