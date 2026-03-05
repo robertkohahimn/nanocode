@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
 	"github.com/robertkohahimn/nanocode/internal/tool"
@@ -22,7 +23,8 @@ func NewToolRegistry(tools ...tool.Tool) *ToolRegistry {
 	for _, t := range tools {
 		name := t.Name()
 		if _, exists := r.tools[name]; exists {
-			continue // skip duplicates
+			log.Printf("tool: duplicate name %q skipped (first registration wins)", name)
+			continue
 		}
 		r.tools[name] = t
 		r.order = append(r.order, name)

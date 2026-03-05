@@ -3,3 +3,7 @@ nanocode
 
 # Temp files from atomic writes
 *.nanocode.tmp
+
+# Generated tool caches
+.claude/
+.tldr/

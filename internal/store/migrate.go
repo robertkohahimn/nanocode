@@ -25,6 +25,16 @@ var migrations = []string{
 		created_at INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);`,
+
+	// Version 2: snapshots for git tracking
+	`CREATE TABLE IF NOT EXISTS snapshots (
+		id         TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		file_path  TEXT NOT NULL,
+		git_hash   TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_snapshots_session ON snapshots(session_id, created_at);`,
 }
 
 // Migrate ensures the database schema is up to date.

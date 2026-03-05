@@ -111,6 +111,8 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 			ch <- Event{Type: EventUsage, Usage: &Usage{InputTokens: msg.Message.Usage.InputTokens}}
 
 		case "content_block_start":
+			const maxToolBuilders = 256
+
 			var block struct {
 				Index        int `json:"index"`
 				ContentBlock struct {
@@ -125,6 +127,10 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 			}
 			if block.Index < 0 {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("invalid negative index %d in content_block_start", block.Index)}
+				return
+			}
+			if block.Index > maxToolBuilders {
+				ch <- Event{Type: EventError, Error: fmt.Errorf("content_block index %d exceeds maximum %d", block.Index, maxToolBuilders)}
 				return
 			}
 

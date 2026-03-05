@@ -12,7 +12,8 @@ import (
 )
 
 type EditTool struct {
-	BaseDir string // restrict edits to this directory; empty = no restriction
+	BaseDir  string              // restrict edits to this directory; empty = no restriction
+	OnChange func(filePath string) // called after successful edit; nil = no-op
 }
 
 type editInput struct {
@@ -104,6 +105,10 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	if err := os.Rename(tmpPath, in.FilePath); err != nil {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("renaming: %w", err)
+	}
+
+	if t.OnChange != nil {
+		t.OnChange(in.FilePath)
 	}
 
 	snippet := diffSnippet(newContent, in.NewString)

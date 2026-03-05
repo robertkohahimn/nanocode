@@ -12,7 +12,10 @@ import (
 	"strings"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
+	"github.com/robertkohahimn/nanocode/internal/mcp"
+	"github.com/robertkohahimn/nanocode/internal/permission"
 	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/snapshot"
 	"github.com/robertkohahimn/nanocode/internal/store"
 	"github.com/robertkohahimn/nanocode/internal/tool"
 )
@@ -33,36 +36,118 @@ Be precise. Make minimal changes. Explain your reasoning.`
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider provider.Provider
-	tools    *ToolRegistry
-	store    store.Store
-	config   *config.Config
+	provider   provider.Provider
+	tools      *ToolRegistry
+	store      store.Store
+	config     *config.Config
+	mcpClients []io.Closer          // MCP subprocess handles
+	snapMgr    *snapshot.Manager     // nil if no project dir
 }
 
 // New creates an Engine with the given dependencies.
 // stdinReader is shared with the REPL loop to avoid conflicting buffered readers.
 func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
-	eng := &Engine{
-		provider: p,
-		store:    s,
-		config:   cfg,
+
+	// Permission system: wire allow/deny lists into bash confirm hook
+	if bashCfg, ok := cfg.Tools["bash"]; ok {
+		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
+			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
+			origConfirm := bashTool.ConfirmFunc
+			bashTool.ConfirmFunc = func(cmd string) bool {
+				if err := checker.Check(cmd); err != nil {
+					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", err)
+					return false
+				}
+				return origConfirm(cmd)
+			}
+		}
 	}
 
-	subagentTool := &tool.SubagentTool{Runner: eng}
-
+	// Snapshot tracking
 	baseDir := cfg.ProjectDir
-	eng.tools = NewToolRegistry(
+	var snapMgr *snapshot.Manager
+	var onChange func(string)
+	if baseDir != "" {
+		snapMgr = snapshot.New(baseDir, s)
+		onChange = snapMgr.Track
+	}
+
+	writeTool := &tool.WriteTool{BaseDir: baseDir, OnChange: onChange}
+	editTool := &tool.EditTool{BaseDir: baseDir, OnChange: onChange}
+
+	// Collect built-in tools
+	allTools := []tool.Tool{
 		&tool.ReadTool{BaseDir: baseDir},
-		&tool.WriteTool{BaseDir: baseDir},
-		&tool.EditTool{BaseDir: baseDir},
+		writeTool, editTool,
 		&tool.GlobTool{},
 		&tool.GrepTool{BaseDir: baseDir},
 		bashTool,
-		subagentTool,
-	)
+	}
+
+	// MCP tools
+	var mcpClients []io.Closer
+	for name, serverCfg := range cfg.MCPServers {
+		var mcpTools []tool.Tool
+		switch serverCfg.Transport {
+		case "stdio":
+			client, err := mcp.NewStdioClient(serverCfg.Command, serverCfg.Args, serverCfg.Env)
+			if err != nil {
+				log.Printf("mcp: failed to start %s: %v", name, err)
+				continue
+			}
+			if err := client.Initialize(context.Background()); err != nil {
+				client.Close()
+				log.Printf("mcp: failed to initialize %s: %v", name, err)
+				continue
+			}
+			tools, err := client.ListTools(context.Background())
+			if err != nil {
+				client.Close()
+				log.Printf("mcp: failed to list tools from %s: %v", name, err)
+				continue
+			}
+			mcpTools = client.Tools(name+"_", tools)
+			mcpClients = append(mcpClients, client)
+		case "http":
+			client := mcp.NewHTTPClient(serverCfg.URL)
+			if err := client.Initialize(context.Background()); err != nil {
+				log.Printf("mcp: failed to initialize %s: %v", name, err)
+				continue
+			}
+			tools, err := client.ListTools(context.Background())
+			if err != nil {
+				log.Printf("mcp: failed to list tools from %s: %v", name, err)
+				continue
+			}
+			mcpTools = client.Tools(name+"_", tools)
+		default:
+			log.Printf("mcp: unknown transport %q for server %s", serverCfg.Transport, name)
+			continue
+		}
+		allTools = append(allTools, mcpTools...)
+	}
+
+	eng := &Engine{
+		provider:   p,
+		store:      s,
+		config:     cfg,
+		mcpClients: mcpClients,
+		snapMgr:    snapMgr,
+	}
+
+	subagentTool := &tool.SubagentTool{Runner: eng}
+	allTools = append(allTools, subagentTool)
+	eng.tools = NewToolRegistry(allTools...)
 
 	return eng
+}
+
+// Close shuts down MCP subprocesses. Must be called on exit.
+func (e *Engine) Close() {
+	for _, c := range e.mcpClients {
+		c.Close()
+	}
 }
 
 // persistMessage marshals content and appends it to the store.
@@ -107,6 +192,9 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 
 // Run starts a conversation from the user's initial prompt.
 func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	if e.snapMgr != nil {
+		e.snapMgr.SetSession(sessionID)
+	}
 	userMsg := provider.Message{
 		Role: provider.RoleUser,
 		Content: []provider.ContentBlock{
@@ -122,6 +210,9 @@ func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEve
 
 // Resume continues an existing session with a new user message.
 func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	if e.snapMgr != nil {
+		e.snapMgr.SetSession(sessionID)
+	}
 	records, err := e.store.GetMessages(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("loading messages: %w", err)

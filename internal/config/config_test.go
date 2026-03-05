@@ -11,7 +11,7 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Provider != "anthropic" {
 		t.Errorf("expected provider anthropic, got %s", cfg.Provider)
 	}
-	if cfg.Model != "claude-sonnet-4-20250514" {
+	if cfg.Model != "claude-sonnet-4-6" {
 		t.Errorf("expected default model, got %s", cfg.Model)
 	}
 	if cfg.MaxTokens != 8192 {
