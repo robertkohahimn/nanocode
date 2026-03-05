@@ -13,7 +13,9 @@ import (
 	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
-type GrepTool struct{}
+type GrepTool struct {
+	BaseDir string
+}
 
 type grepInput struct {
 	Pattern         string `json:"pattern"`
@@ -58,6 +60,23 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 
 	root := in.Path
 	if root == "" {
+		root = "."
+	}
+	if t.BaseDir != "" {
+		baseAbs, err := filepath.EvalSymlinks(t.BaseDir)
+		if err != nil {
+			return "", fmt.Errorf("resolving base dir: %w", err)
+		}
+		targetAbs, err := filepath.EvalSymlinks(filepath.Join(baseAbs, root))
+		if err != nil {
+			return "", fmt.Errorf("resolving path: %w", err)
+		}
+		rel, err := filepath.Rel(baseAbs, targetAbs)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", fmt.Errorf("path %q escapes base directory", root)
+		}
+		root = targetAbs
+	} else if root == "." {
 		var err error
 		root, err = os.Getwd()
 		if err != nil {

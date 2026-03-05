@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -113,7 +115,14 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "\n\033[36m>\033[0m ")
 		line, err := stdinReader.ReadString('\n')
 		if err != nil {
-			return nil // EOF = clean exit
+			line = strings.TrimSpace(line)
+			if errors.Is(err, io.EOF) && line == "" {
+				return nil // EOF with no pending input = clean exit
+			}
+			if !errors.Is(err, io.EOF) {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			// EOF with partial line: process it below
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {

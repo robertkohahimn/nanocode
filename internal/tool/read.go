@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -48,9 +49,18 @@ func (t *ReadTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		return "", err
 	}
 
-	data, err := os.ReadFile(in.FilePath)
+	const maxReadBytes = 1 << 20 // 1 MiB hard cap
+	f, err := os.Open(in.FilePath)
 	if err != nil {
 		return "", fmt.Errorf("reading file: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, int64(maxReadBytes)+1))
+	if err != nil {
+		return "", fmt.Errorf("reading file: %w", err)
+	}
+	if len(data) > maxReadBytes {
+		return "", fmt.Errorf("file too large: exceeds %d bytes", maxReadBytes)
 	}
 
 	if IsBinary(data) {

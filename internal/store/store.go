@@ -87,6 +87,7 @@ func OpenMemory() (*SQLiteStore, error) {
 	}
 	// Pin to one connection so all queries share the same in-memory database.
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()
 		return nil, err

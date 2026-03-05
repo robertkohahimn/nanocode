@@ -53,11 +53,11 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 
 	baseDir := cfg.ProjectDir
 	eng.tools = NewToolRegistry(
-		&tool.ReadTool{},
+		&tool.ReadTool{BaseDir: baseDir},
 		&tool.WriteTool{BaseDir: baseDir},
 		&tool.EditTool{BaseDir: baseDir},
 		&tool.GlobTool{},
-		&tool.GrepTool{},
+		&tool.GrepTool{BaseDir: baseDir},
 		bashTool,
 		subagentTool,
 	)
@@ -236,14 +236,17 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					continue
 				}
 				if inp.FilePath != "" {
-					cleanedPath := filepath.Clean(inp.FilePath)
-					fileEditCounts[cleanedPath]++
-					if fileEditCounts[cleanedPath] > maxFileEdits {
+					key := filepath.Clean(inp.FilePath)
+					if e.config.ProjectDir != "" && !filepath.IsAbs(key) {
+						key = filepath.Clean(filepath.Join(e.config.ProjectDir, key))
+					}
+					fileEditCounts[key]++
+					if fileEditCounts[key] > maxFileEdits {
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
 							ToolResult: &provider.ToolResult{
 								ToolCallID: tc.ID,
-								Content:    fmt.Sprintf("Doom loop detected: %s has been edited %d times. Stop and report to the user.", cleanedPath, fileEditCounts[cleanedPath]),
+								Content:    fmt.Sprintf("Doom loop detected: %s has been edited %d times. Stop and report to the user.", key, fileEditCounts[key]),
 								IsError:    true,
 							},
 						})

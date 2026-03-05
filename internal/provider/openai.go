@@ -212,7 +212,7 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 
 		hasToolCalls := false
 		for _, cb := range m.Content {
-			if cb.Type == "tool_use" {
+			if cb.Type == "tool_use" && cb.ToolCall != nil {
 				hasToolCalls = true
 				break
 			}
@@ -236,8 +236,10 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 				}
 			}
 			msg := map[string]interface{}{
-				"role":       string(m.Role),
-				"tool_calls": toolCalls,
+				"role": string(m.Role),
+			}
+			if len(toolCalls) > 0 {
+				msg["tool_calls"] = toolCalls
 			}
 			if len(textParts) > 0 {
 				msg["content"] = strings.Join(textParts, "\n")
