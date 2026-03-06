@@ -20,6 +20,8 @@ type Store interface {
 	AppendMessage(ctx context.Context, sessionID string, msg *MessageRecord) error
 	GetMessages(ctx context.Context, sessionID string) ([]MessageRecord, error)
 	UpdateSessionTitle(ctx context.Context, id, title string) error
+	CreateSnapshot(ctx context.Context, snap *SnapshotRecord) error
+	ListSnapshots(ctx context.Context, sessionID string) ([]SnapshotRecord, error)
 	Close() error
 }
 
@@ -37,6 +39,14 @@ type MessageRecord struct {
 	Role      string
 	Content   string // JSON-encoded []ContentBlock
 	Metadata  string // JSON: {model, usage, duration_ms}
+	CreatedAt int64
+}
+
+type SnapshotRecord struct {
+	ID        string
+	SessionID string
+	FilePath  string
+	GitHash   string
 	CreatedAt int64
 }
 
@@ -223,6 +233,41 @@ func (s *SQLiteStore) UpdateSessionTitle(ctx context.Context, id, title string) 
 		return fmt.Errorf("session %s not found", id)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) CreateSnapshot(ctx context.Context, snap *SnapshotRecord) error {
+	if snap.ID == "" {
+		snap.ID = uuid.New().String()
+	}
+	if snap.CreatedAt == 0 {
+		snap.CreatedAt = time.Now().Unix()
+	}
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO snapshots (id, session_id, file_path, git_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+		snap.ID, snap.SessionID, snap.FilePath, snap.GitHash, snap.CreatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListSnapshots(ctx context.Context, sessionID string) ([]SnapshotRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, session_id, file_path, git_hash, created_at FROM snapshots WHERE session_id = ? ORDER BY created_at",
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snaps []SnapshotRecord
+	for rows.Next() {
+		var snap SnapshotRecord
+		if err := rows.Scan(&snap.ID, &snap.SessionID, &snap.FilePath, &snap.GitHash, &snap.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning snapshot: %w", err)
+		}
+		snaps = append(snaps, snap)
+	}
+	return snaps, rows.Err()
 }
 
 func (s *SQLiteStore) Close() error {

@@ -108,18 +108,17 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 				return nil
 			}
 
-			// Apply glob filter
+			// Apply glob filter using recursive matcher (supports **)
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return nil // skip entries that cannot be relativized
+			}
+			rel = filepath.ToSlash(rel)
 			if in.Glob != "" {
-				matched, matchErr := filepath.Match(in.Glob, d.Name())
-				if matchErr != nil {
-					return fmt.Errorf("invalid glob pattern %q: %w", in.Glob, matchErr)
-				}
-				if !matched {
+				if !matchGlob(in.Glob, rel) {
 					return nil
 				}
 			}
-
-			rel, _ := filepath.Rel(root, path)
 			found := searchFile(path, rel, re, maxMatches-len(results))
 			results = append(results, found...)
 

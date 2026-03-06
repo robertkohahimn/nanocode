@@ -16,9 +16,10 @@ type Config struct {
 	APIKey     string                `json:"apiKey"`
 	MaxTokens  int                   `json:"maxTokens"`
 	System     string                `json:"system"`
-	Tools      map[string]ToolConfig `json:"tools"`
-	BaseURL    string                `json:"baseURL"`
-	ProjectDir string                `json:"-"` // set by Load(), not from JSON
+	Tools      map[string]ToolConfig      `json:"tools"`
+	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
+	BaseURL    string                     `json:"baseURL"`
+	ProjectDir string                     `json:"-"` // set by Load(), not from JSON
 }
 
 type ToolConfig struct {
@@ -26,11 +27,20 @@ type ToolConfig struct {
 	Deny  []string `json:"deny"`
 }
 
+// MCPServerConfig describes an external MCP tool server.
+type MCPServerConfig struct {
+	Transport string   `json:"transport"` // "stdio" or "http"
+	Command   string   `json:"command"`   // for stdio: command to run
+	Args      []string `json:"args"`      // for stdio: command arguments
+	Env       []string `json:"env"`       // for stdio: extra env vars
+	URL       string   `json:"url"`       // for http: base URL
+}
+
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
 		Provider:  "anthropic",
-		Model:     "claude-sonnet-4-20250514",
+		Model:     "claude-sonnet-4-6",
 		MaxTokens: 8192,
 	}
 }
@@ -104,6 +114,14 @@ func merge(base, overlay *Config) *Config {
 		}
 		for k, v := range overlay.Tools {
 			base.Tools[k] = v
+		}
+	}
+	if overlay.MCPServers != nil {
+		if base.MCPServers == nil {
+			base.MCPServers = make(map[string]MCPServerConfig)
+		}
+		for k, v := range overlay.MCPServers {
+			base.MCPServers[k] = v
 		}
 	}
 	return base

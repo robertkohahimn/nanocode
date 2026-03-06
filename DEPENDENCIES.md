@@ -26,6 +26,19 @@ If a dependency cannot be justified, it must be removed.
   - go.uuid and others have unnecessary features and dependencies.
 - **Size impact:** Negligible (single file, no transitive deps).
 
+### mvdan.cc/sh/v3
+- **Purpose:** Parse shell commands into AST for the permission system
+- **Why not alternatives:**
+  - Simple regex splitting misses pipes, subshells, command substitution,
+    and process substitution. Not secure for permission enforcement.
+  - google/shlex only tokenizes, no AST. Cannot detect nested commands.
+  - mvdan.cc/sh powers shfmt, has 244+ importers, full POSIX sh + bash
+    AST support. Pure Go, zero transitive dependencies.
+- **Tradeoffs:** Adds ~2MB to binary. Parses full bash grammar when we
+  only need command name extraction. Acceptable — security requires
+  correct parsing, not fast parsing.
+- **Size impact:** Small (pure Go, no transitive deps).
+
 ## Standard Library (no justification needed)
 
 - net/http -- HTTP client for provider APIs

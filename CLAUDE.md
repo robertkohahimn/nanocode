@@ -1,0 +1,4 @@
+- No file > 500 lines. If a file exceeds this, it must be decomposed. This is a hard project rule.
+- No dependency without justification. Every entry in go.mod must have a written rationale in DEPENDENCIES.md.
+- Tests from day one. Every package has _test.go files. go test ./... must pass on every commit.
+- Single binary. go build produces one executable. No sidecar processes, no npm install, no runtime downloads.

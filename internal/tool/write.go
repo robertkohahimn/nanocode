@@ -11,7 +11,8 @@ import (
 )
 
 type WriteTool struct {
-	BaseDir string // restrict writes to this directory; empty = no restriction
+	BaseDir  string              // restrict writes to this directory; empty = no restriction
+	OnChange func(filePath string) // called after successful write; nil = no-op
 }
 
 type writeInput struct {
@@ -79,6 +80,10 @@ func (t *WriteTool) Execute(ctx context.Context, input json.RawMessage) (string,
 	if err := os.Rename(tmpPath, in.FilePath); err != nil {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("renaming temp file: %w", err)
+	}
+
+	if t.OnChange != nil {
+		t.OnChange(in.FilePath)
 	}
 
 	return fmt.Sprintf("Wrote %d bytes to %s", len(in.Content), in.FilePath), nil

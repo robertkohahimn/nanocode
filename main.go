@@ -56,6 +56,9 @@ func run() error {
 	}
 
 	dbPath := filepath.Join(xdgDataHome(), "nanocode", "nanocode.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return fmt.Errorf("creating data directory: %w", err)
+	}
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
@@ -82,6 +85,7 @@ func run() error {
 	stdinReader := bufio.NewReader(os.Stdin)
 
 	eng := engine.New(prov, st, cfg, stdinReader)
+	defer eng.Close()
 	onEvent := func(ev provider.Event) {
 		if ev.Type == provider.EventTextDelta {
 			fmt.Print(ev.Text)
@@ -106,8 +110,8 @@ func run() error {
 
 	// If no prompt was given, or after running the initial prompt,
 	// enter interactive REPL mode (unless stdin is not a terminal).
-	if !isTerminal(os.Stdin) && prompt != "" {
-		return nil // piped input + prompt = single-shot mode
+	if !isTerminal(os.Stdin) {
+		return nil // piped input = single-shot mode, don't enter REPL
 	}
 
 	// Interactive REPL loop (uses the shared stdinReader)
@@ -202,6 +206,9 @@ func xdgDataHome() string {
 	if v := os.Getenv("XDG_DATA_HOME"); v != "" {
 		return v
 	}
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(os.TempDir(), ".local", "share")
+	}
 	return filepath.Join(home, ".local", "share")
 }
