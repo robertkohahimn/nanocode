@@ -232,6 +232,7 @@ func (s *simpleSSEReader) Next() (*sseEvent, error) {
 		line, err := scanner.readLine()
 		if err != nil {
 			if err == io.EOF && len(dataLines) > 0 {
+				s.buf = append([]byte(nil), scanner.buf[scanner.pos:]...)
 				return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
 			}
 			return nil, err
@@ -241,7 +242,7 @@ func (s *simpleSSEReader) Next() (*sseEvent, error) {
 			if len(dataLines) == 0 {
 				continue
 			}
-			s.buf = scanner.buf // preserve buffer state
+			s.buf = append([]byte(nil), scanner.buf[scanner.pos:]...) // preserve unread tail only
 			return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
 		}
 

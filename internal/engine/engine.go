@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
 	"github.com/robertkohahimn/nanocode/internal/mcp"
@@ -86,6 +87,7 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	// MCP tools
+	const mcpStartupTimeout = 15 * time.Second
 	var mcpClients []io.Closer
 	for name, serverCfg := range cfg.MCPServers {
 		var mcpTools []tool.Tool
@@ -96,12 +98,17 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 				log.Printf("mcp: failed to start %s: %v", name, err)
 				continue
 			}
-			if err := client.Initialize(context.Background()); err != nil {
+			initCtx, cancel := context.WithTimeout(context.Background(), mcpStartupTimeout)
+			err = client.Initialize(initCtx)
+			cancel()
+			if err != nil {
 				client.Close()
 				log.Printf("mcp: failed to initialize %s: %v", name, err)
 				continue
 			}
-			tools, err := client.ListTools(context.Background())
+			listCtx, cancel := context.WithTimeout(context.Background(), mcpStartupTimeout)
+			tools, err := client.ListTools(listCtx)
+			cancel()
 			if err != nil {
 				client.Close()
 				log.Printf("mcp: failed to list tools from %s: %v", name, err)
@@ -111,11 +118,16 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 			mcpClients = append(mcpClients, client)
 		case "http":
 			client := mcp.NewHTTPClient(serverCfg.URL)
-			if err := client.Initialize(context.Background()); err != nil {
+			initCtx, cancel := context.WithTimeout(context.Background(), mcpStartupTimeout)
+			err := client.Initialize(initCtx)
+			cancel()
+			if err != nil {
 				log.Printf("mcp: failed to initialize %s: %v", name, err)
 				continue
 			}
-			tools, err := client.ListTools(context.Background())
+			listCtx, cancel := context.WithTimeout(context.Background(), mcpStartupTimeout)
+			tools, err := client.ListTools(listCtx)
+			cancel()
 			if err != nil {
 				log.Printf("mcp: failed to list tools from %s: %v", name, err)
 				continue

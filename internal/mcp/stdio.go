@@ -49,6 +49,9 @@ func NewStdioClient(command string, args []string, env []string) (*StdioClient, 
 	}
 
 	if err := cmd.Start(); err != nil {
+		stdinPipe.Close()
+		stdoutPipe.Close()
+		stderrPipe.Close()
 		return nil, fmt.Errorf("mcp stdio: start %s: %w", command, err)
 	}
 

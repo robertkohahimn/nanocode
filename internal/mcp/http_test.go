@@ -209,13 +209,17 @@ func TestHTTPClient_SessionHeader(t *testing.T) {
 	ctx := t.Context()
 
 	// First call: no session header sent
-	client.Call(ctx, "initialize", nil)
+	if _, err := client.Call(ctx, "initialize", nil); err != nil {
+		t.Fatalf("initialize call failed: %v", err)
+	}
 	if receivedSessionID != "" {
 		t.Errorf("first call should not have session ID, got %q", receivedSessionID)
 	}
 
 	// Second call: should send the session ID from first response
-	client.Call(ctx, "tools/list", nil)
+	if _, err := client.Call(ctx, "tools/list", nil); err != nil {
+		t.Fatalf("tools/list call failed: %v", err)
+	}
 	if receivedSessionID != "sess-abc" {
 		t.Errorf("second call should send session ID 'sess-abc', got %q", receivedSessionID)
 	}

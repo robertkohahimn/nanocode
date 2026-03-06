@@ -116,6 +116,14 @@ func merge(base, overlay *Config) *Config {
 			base.Tools[k] = v
 		}
 	}
+	if overlay.MCPServers != nil {
+		if base.MCPServers == nil {
+			base.MCPServers = make(map[string]MCPServerConfig)
+		}
+		for k, v := range overlay.MCPServers {
+			base.MCPServers[k] = v
+		}
+	}
 	return base
 }
 

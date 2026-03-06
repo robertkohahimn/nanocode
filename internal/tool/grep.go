@@ -109,7 +109,11 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 			}
 
 			// Apply glob filter using recursive matcher (supports **)
-			rel, _ := filepath.Rel(root, path)
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return nil // skip entries that cannot be relativized
+			}
+			rel = filepath.ToSlash(rel)
 			if in.Glob != "" {
 				if !matchGlob(in.Glob, rel) {
 					return nil

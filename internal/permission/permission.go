@@ -10,6 +10,7 @@ import (
 
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
+	"command": true,
 	"env":     true,
 	"xargs":   true,
 	"find":    true,
@@ -18,6 +19,13 @@ var wrapperCommands = map[string]bool{
 	"nice":    true,
 	"strace":  true,
 	"sudo":    true,
+}
+
+// canonicalize trims quotes and extracts the base name from a command string.
+func canonicalize(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, `"'`)
+	return filepath.Base(raw)
 }
 
 // Checker validates shell commands against allow/deny lists.
@@ -37,13 +45,17 @@ func NewChecker(allow, deny []string) *Checker {
 	if len(allow) > 0 {
 		c.allow = make(map[string]bool, len(allow))
 		for _, cmd := range allow {
-			c.allow[cmd] = true
+			if name := canonicalize(cmd); name != "" {
+				c.allow[name] = true
+			}
 		}
 	}
 	if len(deny) > 0 {
 		c.deny = make(map[string]bool, len(deny))
 		for _, cmd := range deny {
-			c.deny[cmd] = true
+			if name := canonicalize(cmd); name != "" {
+				c.deny[name] = true
+			}
 		}
 	}
 	return c
@@ -75,7 +87,11 @@ func (c *Checker) Check(command string) error {
 		var nameBuf strings.Builder
 		printer.Print(&nameBuf, call.Args[0])
 		name := nameBuf.String()
-		nameBase := filepath.Base(name)
+		nameBase := canonicalize(name)
+		if nameBase == "" || nameBase == "." {
+			walkErr = fmt.Errorf("blocked: empty command name")
+			return false
+		}
 
 		// Reject commands with variable expansion (can't validate statically)
 		if containsExpansion(call.Args[0]) {

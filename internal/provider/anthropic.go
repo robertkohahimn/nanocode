@@ -129,7 +129,7 @@ func (a *Anthropic) streamEvents(body io.ReadCloser, ch chan<- Event) {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("invalid negative index %d in content_block_start", block.Index)}
 				return
 			}
-			if block.Index > maxToolBuilders {
+			if block.Index >= maxToolBuilders {
 				ch <- Event{Type: EventError, Error: fmt.Errorf("content_block index %d exceeds maximum %d", block.Index, maxToolBuilders)}
 				return
 			}
