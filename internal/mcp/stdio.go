@@ -144,18 +144,27 @@ func (c *StdioClient) Call(ctx context.Context, method string, params interface{
 		return nil, fmt.Errorf("mcp: sending %s: %w (stderr: %s)", method, err, c.stderr.String())
 	}
 
-	// Read response — skip notifications (messages without an id matching ours).
-	// Context is checked between decode iterations. A blocked Decode will
-	// unblock when the subprocess exits or Close() kills it.
-	for {
+	// Spawn a goroutine that kills the subprocess if the context expires.
+	// This is needed because Decode blocks on I/O and won't notice ctx cancellation.
+	stop := make(chan struct{})
+	go func() {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+			if c.cmd.Process != nil {
+				_ = c.cmd.Process.Kill()
+			}
+		case <-stop:
 		}
+	}()
+	defer close(stop)
 
+	// Read response — skip notifications (messages without an id matching ours).
+	for {
 		var resp JSONRPCResponse
 		if err := c.dec.Decode(&resp); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("mcp: reading %s response: %w (stderr: %s)", method, err, c.stderr.String())
 		}
 

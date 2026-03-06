@@ -230,15 +230,18 @@ func (s *simpleSSEReader) Next() (*sseEvent, error) {
 
 	for {
 		line, err := scanner.readLine()
-		if err != nil {
-			if err == io.EOF && len(dataLines) > 0 {
-				s.buf = append([]byte(nil), scanner.buf[scanner.pos:]...)
-				return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
-			}
+		if err != nil && err != io.EOF {
 			return nil, err
 		}
 
 		if line == "" {
+			if err == io.EOF {
+				if len(dataLines) > 0 {
+					s.buf = append([]byte(nil), scanner.buf[scanner.pos:]...)
+					return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
+				}
+				return nil, io.EOF
+			}
 			if len(dataLines) == 0 {
 				continue
 			}
@@ -246,14 +249,20 @@ func (s *simpleSSEReader) Next() (*sseEvent, error) {
 			return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
 		}
 
-		if strings.HasPrefix(line, ":") {
-			continue // comment
+		if !strings.HasPrefix(line, ":") {
+			if after, ok := strings.CutPrefix(line, "event:"); ok {
+				eventType = strings.TrimSpace(after)
+			} else if after, ok := strings.CutPrefix(line, "data:"); ok {
+				dataLines = append(dataLines, strings.TrimPrefix(after, " "))
+			}
 		}
 
-		if after, ok := strings.CutPrefix(line, "event:"); ok {
-			eventType = strings.TrimSpace(after)
-		} else if after, ok := strings.CutPrefix(line, "data:"); ok {
-			dataLines = append(dataLines, strings.TrimPrefix(after, " "))
+		if err == io.EOF {
+			if len(dataLines) > 0 {
+				s.buf = append([]byte(nil), scanner.buf[scanner.pos:]...)
+				return &sseEvent{eventType: eventType, data: strings.Join(dataLines, "\n")}, nil
+			}
+			return nil, io.EOF
 		}
 	}
 }
