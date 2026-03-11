@@ -111,15 +111,31 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		t.OnChange(in.FilePath)
 	}
 
-	snippet := diffSnippet(newContent, in.NewString)
+	// Compute the position where the replacement occurred for diffSnippet
+	replacePos := strings.Index(content, in.OldString)
+	snippet := diffSnippet(newContent, in.NewString, replacePos)
 	return fmt.Sprintf("Edited %s (%d replacement(s))\n%s", filepath.Base(in.FilePath), count, snippet), nil
 }
 
 // diffSnippet shows a few lines of context around the replacement in the new content.
-func diffSnippet(newContent, newStr string) string {
-	idx := strings.Index(newContent, newStr)
-	if idx < 0 {
-		return ""
+// replacePos is the position in the original content where the replacement occurred,
+// used when newStr is empty (deletion) since strings.Index would return 0.
+func diffSnippet(newContent, newStr string, replacePos int) string {
+	var idx int
+	if newStr == "" {
+		// For deletions, use the provided position (clamped to content bounds)
+		idx = replacePos
+		if idx > len(newContent) {
+			idx = len(newContent)
+		}
+		if idx < 0 {
+			idx = 0
+		}
+	} else {
+		idx = strings.Index(newContent, newStr)
+		if idx < 0 {
+			return ""
+		}
 	}
 
 	lines := strings.Split(newContent, "\n")
