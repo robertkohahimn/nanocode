@@ -66,7 +66,10 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 			return nil
 		}
 
-		rel, _ := filepath.Rel(root, path)
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil // skip paths that can't be made relative
+		}
 		// Normalize to forward slashes for cross-platform glob matching
 		rel = filepath.ToSlash(rel)
 		if matchGlob(in.Pattern, rel) {

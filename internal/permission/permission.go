@@ -115,13 +115,24 @@ func (c *Checker) Check(command string) error {
 			return false
 		}
 
-		// bash -c / sh -c: check first argument
+		// bash -c / sh -c: check all arguments for -c flag
+		// Must detect both standalone "-c" and combined flags like "-ce", "-ec"
 		if (nameBase == "bash" || nameBase == "sh") && len(call.Args) > 1 {
-			var argBuf strings.Builder
-			printer.Print(&argBuf, call.Args[1])
-			if argBuf.String() == "-c" {
-				walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
-				return false
+			for i := 1; i < len(call.Args); i++ {
+				var argBuf strings.Builder
+				printer.Print(&argBuf, call.Args[i])
+				arg := argBuf.String()
+				// Check for standalone -c
+				if arg == "-c" {
+					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
+					return false
+				}
+				// Check for combined short flags containing 'c' (e.g., -ce, -ec, -xc)
+				// Must start with single dash, not double dash, and contain 'c'
+				if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
+					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
+					return false
+				}
 			}
 		}
 
