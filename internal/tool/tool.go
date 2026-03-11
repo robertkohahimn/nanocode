@@ -34,16 +34,21 @@ func ParseInput[T any](input json.RawMessage) (T, error) {
 // MaxOutputLen is the default truncation limit for tool output (100KB).
 const MaxOutputLen = 100 * 1024
 
-// TruncateOutput caps tool output at maxLen runes (not bytes) to preserve UTF-8.
+// TruncateOutput caps tool output at maxLen bytes while preserving UTF-8.
+// It backs off to the last valid rune boundary to avoid cutting multi-byte characters.
 func TruncateOutput(s string, maxLen int) string {
-	if maxLen <= 0 {
+	if maxLen <= 0 || len(s) == 0 {
 		return ""
 	}
-	if utf8.RuneCountInString(s) <= maxLen {
+	if len(s) <= maxLen {
 		return s
 	}
-	runes := []rune(s)
-	return string(runes[:maxLen]) + "\n... (truncated)"
+	// Back off to last valid UTF-8 rune boundary
+	cut := maxLen
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "\n... (truncated)"
 }
 
 // IsBinary checks if data likely contains binary content

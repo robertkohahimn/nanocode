@@ -55,6 +55,9 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	var matches []string
 	var limitReached bool
 
+	// Normalize pattern to forward slashes for consistent cross-platform matching
+	pattern := filepath.ToSlash(in.Pattern)
+
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip individual entry errors
@@ -72,7 +75,7 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		}
 		// Normalize to forward slashes for cross-platform glob matching
 		rel = filepath.ToSlash(rel)
-		if matchGlob(in.Pattern, rel) {
+		if matchGlob(pattern, rel) {
 			matches = append(matches, rel)
 			if len(matches) >= maxResults {
 				limitReached = true

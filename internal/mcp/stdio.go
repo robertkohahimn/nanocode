@@ -199,10 +199,8 @@ func (c *StdioClient) Call(ctx context.Context, method string, params interface{
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-		// Kill process on context cancellation
-		if c.cmd.Process != nil {
-			_ = c.cmd.Process.Kill()
-		}
+		// Don't kill the subprocess here - other calls may be in flight.
+		// Process shutdown is handled by Close().
 		return nil, ctx.Err()
 	case result := <-respCh:
 		if result.err != nil {

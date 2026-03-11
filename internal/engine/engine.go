@@ -194,10 +194,18 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 		}
 	}
 	// Deep copy the MCPServers map to prevent mutation of parent config
+	// Must also clone slice fields (Args, Env) to avoid sharing backing arrays
 	if e.config.MCPServers != nil {
 		subCfg.MCPServers = make(map[string]config.MCPServerConfig, len(e.config.MCPServers))
 		for k, v := range e.config.MCPServers {
-			subCfg.MCPServers[k] = v
+			copied := v
+			if v.Args != nil {
+				copied.Args = append([]string(nil), v.Args...)
+			}
+			if v.Env != nil {
+				copied.Env = append([]string(nil), v.Env...)
+			}
+			subCfg.MCPServers[k] = copied
 		}
 	}
 
