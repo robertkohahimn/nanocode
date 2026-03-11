@@ -118,24 +118,18 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 }
 
 // diffSnippet shows a few lines of context around the replacement in the new content.
-// replacePos is the position in the original content where the replacement occurred,
-// used when newStr is empty (deletion) since strings.Index would return 0.
+// replacePos is the position in the original content where the replacement occurred.
+// We use this directly rather than searching for newStr, which could match the wrong
+// occurrence if the same string appears multiple times.
 func diffSnippet(newContent, newStr string, replacePos int) string {
-	var idx int
-	if newStr == "" {
-		// For deletions, use the provided position (clamped to content bounds)
-		idx = replacePos
-		if idx > len(newContent) {
-			idx = len(newContent)
-		}
-		if idx < 0 {
-			idx = 0
-		}
-	} else {
-		idx = strings.Index(newContent, newStr)
-		if idx < 0 {
-			return ""
-		}
+	// Use replacePos directly - it's where the replacement started in the original,
+	// which is also where it starts in the new content (for single replacements)
+	idx := replacePos
+	if idx > len(newContent) {
+		idx = len(newContent)
+	}
+	if idx < 0 {
+		idx = 0
 	}
 
 	lines := strings.Split(newContent, "\n")

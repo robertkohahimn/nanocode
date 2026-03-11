@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
 )
@@ -33,12 +34,16 @@ func ParseInput[T any](input json.RawMessage) (T, error) {
 // MaxOutputLen is the default truncation limit for tool output (100KB).
 const MaxOutputLen = 100 * 1024
 
-// TruncateOutput caps tool output at maxLen characters.
+// TruncateOutput caps tool output at maxLen runes (not bytes) to preserve UTF-8.
 func TruncateOutput(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if maxLen <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "\n... (truncated)"
+	runes := []rune(s)
+	return string(runes[:maxLen]) + "\n... (truncated)"
 }
 
 // IsBinary checks if data likely contains binary content
