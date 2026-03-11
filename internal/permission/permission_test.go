@@ -90,7 +90,7 @@ func TestChecker_Subshell(t *testing.T) {
 }
 
 func TestChecker_MetaCommands(t *testing.T) {
-	// Even with no allow/deny lists, meta-commands are always blocked
+	// Even with no allow/deny lists, meta-commands and wrapper commands are blocked
 	c := NewChecker(nil, nil)
 
 	tests := []struct {
@@ -102,8 +102,13 @@ func TestChecker_MetaCommands(t *testing.T) {
 		{"exec /bin/sh", true, "exec"},
 		{"bash -c 'rm -rf /'", true, "bash"},
 		{"sh -c 'rm -rf /'", true, "sh"},
-		// bash without -c is fine (if not in deny list)
-		{"bash --version", false, ""},
+		// bash/sh are blocked entirely because they can execute scripts
+		{"bash --version", true, "bash"},
+		{"bash script.sh", true, "bash"},
+		{"sh script.sh", true, "sh"},
+		// builtin and source are also blocked
+		{"builtin echo hello", true, "builtin"},
+		{"source ./script.sh", true, "source"},
 	}
 
 	for _, tt := range tests {

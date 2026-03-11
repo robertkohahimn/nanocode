@@ -184,7 +184,13 @@ func isTerminal(f *os.File) bool {
 }
 
 func detectProject() string {
-	dir, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		// Can't determine working directory - return empty string
+		// Caller will use config defaults
+		return ""
+	}
+	dir := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "nanocode.json")); err == nil {
 			return dir
@@ -198,7 +204,7 @@ func detectProject() string {
 		}
 		dir = parent
 	}
-	cwd, _ := os.Getwd()
+	// No project markers found, return the original working directory
 	return cwd
 }
 

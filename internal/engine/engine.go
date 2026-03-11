@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
 	"github.com/robertkohahimn/nanocode/internal/mcp"
@@ -192,6 +193,21 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 			subCfg.Tools[k] = v
 		}
 	}
+	// Deep copy the MCPServers map to prevent mutation of parent config
+	// Must also clone slice fields (Args, Env) to avoid sharing backing arrays
+	if e.config.MCPServers != nil {
+		subCfg.MCPServers = make(map[string]config.MCPServerConfig, len(e.config.MCPServers))
+		for k, v := range e.config.MCPServers {
+			copied := v
+			if v.Args != nil {
+				copied.Args = append([]string(nil), v.Args...)
+			}
+			if v.Env != nil {
+				copied.Env = append([]string(nil), v.Env...)
+			}
+			subCfg.MCPServers[k] = copied
+		}
+	}
 
 	messages := []provider.Message{
 		{Role: provider.RoleUser, Content: []provider.ContentBlock{
@@ -266,9 +282,17 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			data, readErr := io.ReadAll(io.LimitReader(f, maxProjectCtx+1))
 			f.Close()
 			if readErr == nil && len(data) > 0 {
-				content := string(data)
+				var content string
 				if len(data) > maxProjectCtx {
-					content = content[:maxProjectCtx] + "\n... (truncated at 1MB)"
+					// Truncate at a valid UTF-8 rune boundary, reserving space for suffix
+					const suffix = "\n... (truncated at 1MB)"
+					cut := maxProjectCtx - len(suffix)
+					for cut > 0 && !utf8.RuneStart(data[cut]) {
+						cut--
+					}
+					content = string(data[:cut]) + suffix
+				} else {
+					content = string(data)
 				}
 				system += "\n\n# Project Context\n\n" + content
 			}

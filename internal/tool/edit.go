@@ -111,15 +111,25 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		t.OnChange(in.FilePath)
 	}
 
-	snippet := diffSnippet(newContent, in.NewString)
+	// Compute the position where the replacement occurred for diffSnippet
+	replacePos := strings.Index(content, in.OldString)
+	snippet := diffSnippet(newContent, in.NewString, replacePos)
 	return fmt.Sprintf("Edited %s (%d replacement(s))\n%s", filepath.Base(in.FilePath), count, snippet), nil
 }
 
 // diffSnippet shows a few lines of context around the replacement in the new content.
-func diffSnippet(newContent, newStr string) string {
-	idx := strings.Index(newContent, newStr)
+// replacePos is the position in the original content where the replacement occurred.
+// We use this directly rather than searching for newStr, which could match the wrong
+// occurrence if the same string appears multiple times.
+func diffSnippet(newContent, newStr string, replacePos int) string {
+	// Use replacePos directly - it's where the replacement started in the original,
+	// which is also where it starts in the new content (for single replacements)
+	idx := replacePos
+	if idx > len(newContent) {
+		idx = len(newContent)
+	}
 	if idx < 0 {
-		return ""
+		idx = 0
 	}
 
 	lines := strings.Split(newContent, "\n")
