@@ -184,7 +184,11 @@ func isTerminal(f *os.File) bool {
 }
 
 func detectProject() string {
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		// Fall back to temp directory if we can't get working directory
+		return os.TempDir()
+	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "nanocode.json")); err == nil {
 			return dir
@@ -198,7 +202,11 @@ func detectProject() string {
 		}
 		dir = parent
 	}
-	cwd, _ := os.Getwd()
+	// Already have cwd from the start of the function
+	cwd, err := os.Getwd()
+	if err != nil {
+		return os.TempDir()
+	}
 	return cwd
 }
 

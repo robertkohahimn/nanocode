@@ -10,22 +10,57 @@ import (
 
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
-	"command": true,
-	"env":     true,
-	"xargs":   true,
-	"find":    true,
-	"nohup":   true,
-	"timeout": true,
-	"nice":    true,
-	"strace":  true,
-	"sudo":    true,
+	"command":  true,
+	"env":      true,
+	"xargs":    true,
+	"find":     true,
+	"nohup":    true,
+	"timeout":  true,
+	"nice":     true,
+	"strace":   true,
+	"sudo":     true,
+	"time":     true,
+	"watch":    true,
+	"parallel": true,
+	"ssh":      true,
+	"su":       true,
+	"doas":     true,
+	"runuser":  true,
+	"pkexec":   true,
+	"chroot":   true,
+	"script":   true,
 }
 
-// canonicalize trims quotes and extracts the base name from a command string.
+// canonicalize normalizes a command name by stripping leading backslashes,
+// removing outer quotes, and extracting the base name.
 func canonicalize(raw string) string {
 	raw = strings.TrimSpace(raw)
+	// Strip leading backslashes (e.g., \eval -> eval)
+	raw = strings.TrimLeft(raw, `\`)
 	raw = strings.Trim(raw, `"'`)
 	return filepath.Base(raw)
+}
+
+// extractCommandName resolves the command name from an AST word by
+// concatenating literal parts. This handles mixed quotes like "ev"'al'.
+func extractCommandName(word *syntax.Word) string {
+	var result strings.Builder
+	for _, part := range word.Parts {
+		switch p := part.(type) {
+		case *syntax.Lit:
+			result.WriteString(p.Value)
+		case *syntax.SglQuoted:
+			result.WriteString(p.Value)
+		case *syntax.DblQuoted:
+			// Recurse into double-quoted parts
+			for _, inner := range p.Parts {
+				if lit, ok := inner.(*syntax.Lit); ok {
+					result.WriteString(lit.Value)
+				}
+			}
+		}
+	}
+	return result.String()
 }
 
 // Checker validates shell commands against allow/deny lists.
@@ -71,7 +106,6 @@ func (c *Checker) Check(command string) error {
 		return fmt.Errorf("blocked: failed to parse command: %w", err)
 	}
 
-	printer := syntax.NewPrinter()
 	var walkErr error
 
 	syntax.Walk(file, func(node syntax.Node) bool {
@@ -83,10 +117,8 @@ func (c *Checker) Check(command string) error {
 			return true
 		}
 
-		// Extract command name and normalize to base name
-		var nameBuf strings.Builder
-		printer.Print(&nameBuf, call.Args[0])
-		name := nameBuf.String()
+		// Extract command name using AST to handle mixed quotes properly
+		name := extractCommandName(call.Args[0])
 		nameBase := canonicalize(name)
 		if nameBase == "" || nameBase == "." {
 			walkErr = fmt.Errorf("blocked: empty command name")
@@ -115,13 +147,21 @@ func (c *Checker) Check(command string) error {
 			return false
 		}
 
-		// bash -c / sh -c: check all arguments for -c flag
+		// bash -c / sh -c: check arguments for -c flag
 		// Must detect both standalone "-c" and combined flags like "-ce", "-ec"
+		// Stop scanning at first non-flag argument or "--" to avoid false positives
+		// on script arguments (e.g., "bash script.sh -c value")
 		if (nameBase == "bash" || nameBase == "sh") && len(call.Args) > 1 {
 			for i := 1; i < len(call.Args); i++ {
-				var argBuf strings.Builder
-				printer.Print(&argBuf, call.Args[i])
-				arg := argBuf.String()
+				arg := extractCommandName(call.Args[i])
+				// Stop at "--" (end of options marker)
+				if arg == "--" {
+					break
+				}
+				// Stop at first non-flag argument (doesn't start with "-")
+				if !strings.HasPrefix(arg, "-") {
+					break
+				}
 				// Check for standalone -c
 				if arg == "-c" {
 					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
@@ -129,7 +169,7 @@ func (c *Checker) Check(command string) error {
 				}
 				// Check for combined short flags containing 'c' (e.g., -ce, -ec, -xc)
 				// Must start with single dash, not double dash, and contain 'c'
-				if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
+				if !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
 					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
 					return false
 				}
