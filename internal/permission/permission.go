@@ -10,6 +10,10 @@ import (
 
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
+	"bash":     true, // can execute scripts or commands
+	"sh":       true, // can execute scripts or commands
+	"builtin":  true, // can invoke shell builtins like eval
+	"source":   true, // sources/executes script files
 	"command":  true,
 	"env":      true,
 	"xargs":    true,
@@ -142,62 +146,11 @@ func (c *Checker) Check(command string) error {
 		}
 
 		// Wrapper commands that can execute arbitrary sub-commands
+		// This includes bash/sh which are blocked entirely rather than trying to
+		// detect dangerous flags like -c, since they can execute scripts directly.
 		if wrapperCommands[nameBase] {
 			walkErr = fmt.Errorf("blocked: %q is not permitted (can execute arbitrary commands)", nameBase)
 			return false
-		}
-
-		// bash -c / sh -c: check arguments for -c flag
-		// Must detect both standalone "-c" and combined flags like "-ce", "-ec"
-		// Handle options that take values (--rcfile FILE, -O opt, -o opt) to avoid
-		// treating the value as a non-flag argument and stopping too early.
-		if (nameBase == "bash" || nameBase == "sh") && len(call.Args) > 1 {
-			skipNext := false
-			for i := 1; i < len(call.Args); i++ {
-				arg := extractCommandName(call.Args[i])
-
-				// Skip option values (argument following an option that takes a value)
-				if skipNext {
-					skipNext = false
-					continue
-				}
-
-				// Stop at "--" (end of options marker)
-				if arg == "--" {
-					break
-				}
-
-				// Handle long options that take values
-				if arg == "--rcfile" || arg == "--init-file" {
-					skipNext = true
-					continue
-				}
-
-				// Handle short options that take values: -o, -O
-				// These consume the next argument as their value
-				if arg == "-o" || arg == "-O" {
-					skipNext = true
-					continue
-				}
-
-				// Stop at first non-flag argument (doesn't start with "-")
-				if !strings.HasPrefix(arg, "-") {
-					break
-				}
-
-				// Check for standalone -c
-				if arg == "-c" {
-					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
-					return false
-				}
-
-				// Check for combined short flags containing 'c' (e.g., -ce, -ec, -xc)
-				// Must start with single dash, not double dash, and contain 'c'
-				if !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
-					walkErr = fmt.Errorf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)
-					return false
-				}
-			}
 		}
 
 		// Check deny list

@@ -284,12 +284,13 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			if readErr == nil && len(data) > 0 {
 				var content string
 				if len(data) > maxProjectCtx {
-					// Truncate at a valid UTF-8 rune boundary
-					cut := maxProjectCtx
+					// Truncate at a valid UTF-8 rune boundary, reserving space for suffix
+					const suffix = "\n... (truncated at 1MB)"
+					cut := maxProjectCtx - len(suffix)
 					for cut > 0 && !utf8.RuneStart(data[cut]) {
 						cut--
 					}
-					content = string(data[:cut]) + "\n... (truncated at 1MB)"
+					content = string(data[:cut]) + suffix
 				} else {
 					content = string(data)
 				}
