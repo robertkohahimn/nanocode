@@ -5,6 +5,7 @@ package benchmark
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +91,10 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 	if err != nil {
 		result.Error = fmt.Sprintf("creating engine: %v", err)
 		return result
+	}
+	// Close the engine after use if it implements io.Closer
+	if closer, ok := eng.(io.Closer); ok {
+		defer closer.Close()
 	}
 
 	start := time.Now()

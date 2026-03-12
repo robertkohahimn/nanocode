@@ -272,7 +272,8 @@ func runBenchmark(ctx context.Context, args []string) error {
 		workCfg := *cfg
 		workCfg.ProjectDir = workDir
 		eng := engine.New(prov, st, &workCfg, bufio.NewReader(strings.NewReader("")), true)
-		return &benchmarkEngineAdapter{eng: eng, store: st, projectDir: workDir}, nil
+		adapter := &benchmarkEngineAdapter{eng: eng, store: st, projectDir: workDir}
+		return adapter, nil
 	}
 
 	return benchmark.RunCLI(ctx, args, factory, os.Stdout)
@@ -286,7 +287,6 @@ type benchmarkEngineAdapter struct {
 }
 
 func (a *benchmarkEngineAdapter) Run(ctx context.Context, prompt string) ([]benchmark.ToolCallRecord, error) {
-	defer a.eng.Close()
 	sessionID, err := a.store.CreateSession(ctx, a.projectDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
@@ -301,6 +301,11 @@ func (a *benchmarkEngineAdapter) Run(ctx context.Context, prompt string) ([]benc
 	return []benchmark.ToolCallRecord{
 		{Name: "engine-run", DurationMs: elapsed.Milliseconds()},
 	}, nil
+}
+
+func (a *benchmarkEngineAdapter) Close() error {
+	a.eng.Close()
+	return nil
 }
 
 func xdgDataHome() string {

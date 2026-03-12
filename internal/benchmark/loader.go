@@ -80,6 +80,8 @@ func LoadTask(dir string) (*Task, error) {
 	setupBytes, err := os.ReadFile(filepath.Join(dir, "setup.sh"))
 	if err == nil {
 		task.SetupScript = string(setupBytes)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading setup.sh: %w", err)
 	}
 
 	// Read config.json (optional)
@@ -91,6 +93,8 @@ func LoadTask(dir string) (*Task, error) {
 		}
 		task.Category = cfg.Category
 		task.ExpectedTools = cfg.ExpectedTools
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading config.json: %w", err)
 	}
 
 	return task, nil
