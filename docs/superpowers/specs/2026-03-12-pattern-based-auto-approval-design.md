@@ -155,8 +155,8 @@ Run: git push origin main [Y/n]
 
 ### Security Tests
 - Patterns cannot be injected via command input (pattern is config, not user input)
-- Commands with special glob characters in them are matched literally
-- `*` in patterns only, not in commands being checked
+- Only `*` is treated as a wildcard in patterns; other glob characters (`?`, `[`, `]`, `{`, `}`) are matched literally in both patterns and commands
+- `*` appearing in commands (not patterns) is matched as a literal asterisk
 
 ### Existing Tests
 - All existing allow/deny tests continue to pass
@@ -166,6 +166,6 @@ Run: git push origin main [Y/n]
 
 - Deny always takes precedence over autoApprove
 - Meta-commands and wrapper commands are hardcoded blocks, not configurable
-- Variable expansion in commands is blocked (cannot validate statically)
+- Variable expansion in commands is blocked (cannot validate statically): this includes shell variables (`$VAR`, `${VAR}`), command substitution (`$(cmd)`, `` `cmd` ``), and other shell expansions (`~`, arithmetic `$((expr))`)
 - `--strict` flag provides escape hatch for sensitive operations
 - **Deny/AutoApprove matching asymmetry:** Deny patterns match against both the full command string AND the base command name (more conservative for security), while autoApprove patterns only match against the full command string. This ensures deny patterns like `rm *` catch all variations of dangerous commands.
