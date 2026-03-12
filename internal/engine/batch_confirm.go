@@ -88,24 +88,28 @@ func promptBatch(commands []pendingCommand, reader *bufio.Reader, output io.Writ
 	for i, cmd := range commands {
 		fmt.Fprintf(output, "  %d. %s\n", i+1, cmd.command)
 	}
-	fmt.Fprintf(output, "\nRun all? \033[2m[Y/n/1,3,4]\033[0m ")
 
-	// Read user input
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		// On EOF or error, reject all
-		result := make(map[string]batchDecision)
-		for _, cmd := range commands {
-			result[cmd.toolCallID] = batchDecision{approved: false, skipped: false}
+	// Re-prompt loop until valid input
+	var selected []bool
+	for {
+		fmt.Fprintf(output, "\nRun all? \033[2m[Y/n/1,3,4]\033[0m ")
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			// On EOF or error, reject all
+			result := make(map[string]batchDecision)
+			for _, cmd := range commands {
+				result[cmd.toolCallID] = batchDecision{approved: false, skipped: false}
+			}
+			return result, nil
 		}
-		return result, nil
-	}
 
-	// Parse selection
-	selected, err := parseSelection(line, len(commands))
-	if err != nil {
-		// On parse error, ask again (for now, just return the error)
-		return nil, fmt.Errorf("invalid selection: %w", err)
+		selected, err = parseSelection(line, len(commands))
+		if err != nil {
+			fmt.Fprintf(output, "\033[31mInvalid selection.\033[0m Enter Y, n, or numbers 1-%d\n", len(commands))
+			continue
+		}
+		break
 	}
 
 	// Build decisions map

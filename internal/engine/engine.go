@@ -327,12 +327,13 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		}
 
 		// Batch confirmation for multiple bash commands
+		var bashToolForClear *tool.BashTool
 		if bashT, ok := e.tools.Get("bash"); ok {
 			if bt, ok := bashT.(*tool.BashTool); ok {
 				if err := collectBashConfirmations(toolCalls, bt, e.permChecker, e.stdinReader, os.Stderr); err != nil {
 					return fmt.Errorf("batch confirmation: %w", err)
 				}
-				defer bt.ClearConfirmOverrides()
+				bashToolForClear = bt
 			}
 		}
 
@@ -379,6 +380,11 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				Type:       "tool_result",
 				ToolResult: result,
 			})
+		}
+
+		// Clear batch overrides after tool execution
+		if bashToolForClear != nil {
+			bashToolForClear.ClearConfirmOverrides()
 		}
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}

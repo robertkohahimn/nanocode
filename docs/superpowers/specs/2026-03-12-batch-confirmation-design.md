@@ -8,7 +8,7 @@
 
 When the LLM requests multiple shell commands in a single response, users must confirm each one individually:
 
-```
+```text
 Run: mkdir -p project [Y/n] Y
 Run: pwd [Y/n] Y
 Run: ls [Y/n] Y
@@ -21,7 +21,7 @@ This creates friction when commands arrive in rapid succession.
 
 Present all bash commands requiring confirmation as a numbered batch with a single prompt:
 
-```
+```text
 Pending commands:
   1. mkdir -p project
   2. pwd
@@ -61,7 +61,7 @@ Users can approve all (`Y`), reject all (`n`), or select specific commands by nu
 
 ### Flow
 
-```
+```text
 LLM Response arrives
        ↓
 collectResponse() extracts toolCalls slice
@@ -124,7 +124,7 @@ func ParseBashInput(raw json.RawMessage) (BashInput, error)
 
 ### Batch Prompt
 
-```
+```text
 Pending commands:
   1. mkdir -p project
   2. pwd
