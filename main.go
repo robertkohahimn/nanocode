@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/robertkohahimn/nanocode/internal/benchmark"
 	"github.com/robertkohahimn/nanocode/internal/config"
 	"github.com/robertkohahimn/nanocode/internal/engine"
 	"github.com/robertkohahimn/nanocode/internal/provider"
@@ -29,6 +30,11 @@ func main() {
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	// Check for benchmark subcommand before normal arg parsing.
+	if len(os.Args) > 1 && os.Args[1] == "benchmark" {
+		return runBenchmark(ctx, os.Args[2:])
+	}
 
 	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm, logPath := parseArgs(os.Args[1:])
 	if autoConfirm {
@@ -230,6 +236,71 @@ func detectProject() string {
 	}
 	cwd, _ := os.Getwd()
 	return cwd
+}
+
+func runBenchmark(ctx context.Context, args []string) error {
+	projectDir := detectProject()
+	cfg, err := config.Load(projectDir)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.APIKey == "" {
+		return fmt.Errorf("no API key configured. Set %s_API_KEY or add apiKey to config", strings.ToUpper(cfg.Provider))
+	}
+
+	var prov provider.Provider
+	switch cfg.Provider {
+	case "anthropic":
+		prov = provider.NewAnthropic(cfg.APIKey, cfg.BaseURL)
+	case "openai":
+		prov = provider.NewOpenAI(cfg.APIKey, cfg.BaseURL)
+	default:
+		return fmt.Errorf("unknown provider: %s", cfg.Provider)
+	}
+
+	dbPath := filepath.Join(xdgDataHome(), "nanocode", "nanocode.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return fmt.Errorf("creating data directory: %w", err)
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer st.Close()
+
+	factory := func(workDir string) (benchmark.EngineRunner, error) {
+		workCfg := *cfg
+		workCfg.ProjectDir = workDir
+		eng := engine.New(prov, st, &workCfg, bufio.NewReader(strings.NewReader("")), true)
+		return &benchmarkEngineAdapter{eng: eng, store: st, projectDir: workDir}, nil
+	}
+
+	return benchmark.RunCLI(ctx, args, factory, os.Stdout)
+}
+
+// benchmarkEngineAdapter adapts the real engine to the benchmark.EngineRunner interface.
+type benchmarkEngineAdapter struct {
+	eng        *engine.Engine
+	store      store.Store
+	projectDir string
+}
+
+func (a *benchmarkEngineAdapter) Run(ctx context.Context, prompt string) ([]benchmark.ToolCallRecord, error) {
+	defer a.eng.Close()
+	sessionID, err := a.store.CreateSession(ctx, a.projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
+	}
+	start := time.Now()
+	if err := a.eng.Run(ctx, sessionID, prompt, func(_ provider.Event) {}); err != nil {
+		return nil, err
+	}
+	elapsed := time.Since(start)
+	// We return a single aggregate record since the engine doesn't expose
+	// individual tool call records yet.
+	return []benchmark.ToolCallRecord{
+		{Name: "engine-run", DurationMs: elapsed.Milliseconds()},
+	}, nil
 }
 
 func xdgDataHome() string {

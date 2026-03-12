@@ -1,0 +1,1 @@
+In main.go, rename the variable 'foo' to 'bar' everywhere it appears
