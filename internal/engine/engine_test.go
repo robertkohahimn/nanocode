@@ -67,7 +67,7 @@ func TestEngineTextOnly(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
@@ -118,7 +118,7 @@ func TestEngineToolCallThenText(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
 
@@ -157,7 +157,7 @@ func TestEngineProviderError(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
 
@@ -183,7 +183,7 @@ func TestEngineContextCancellation(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	sessionID, _ := st.CreateSession(context.Background(), "/tmp")
 
 	err = eng.Run(ctx, sessionID, "hi", func(ev provider.Event) {})

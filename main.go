@@ -30,7 +30,10 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	prompt, sessionID, listMode, modelOverride := parseArgs(os.Args[1:])
+	prompt, sessionID, listMode, modelOverride, autoConfirm := parseArgs(os.Args[1:])
+	if autoConfirm {
+		fmt.Fprintln(os.Stderr, "⚠️  Auto-confirm enabled: all shell commands will run without confirmation")
+	}
 	projectDir := detectProject()
 
 	cfg, err := config.Load(projectDir)
@@ -84,7 +87,7 @@ func run() error {
 	// confirmation prompts to avoid conflicts from multiple buffered readers.
 	stdinReader := bufio.NewReader(os.Stdin)
 
-	eng := engine.New(prov, st, cfg, stdinReader)
+	eng := engine.New(prov, st, cfg, stdinReader, autoConfirm)
 	defer eng.Close()
 	onEvent := func(ev provider.Event) {
 		if ev.Type == provider.EventTextDelta {
@@ -146,7 +149,7 @@ func run() error {
 	}
 }
 
-func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOverride string) {
+func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOverride string, autoConfirm bool) {
 	var parts []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -166,6 +169,8 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 			} else {
 				fmt.Fprintln(os.Stderr, "warning: --model requires a value")
 			}
+		case "--yes", "-y":
+			autoConfirm = true
 		default:
 			parts = append(parts, args[i])
 		}
