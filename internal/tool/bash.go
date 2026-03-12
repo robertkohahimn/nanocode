@@ -16,13 +16,20 @@ import (
 type BashTool struct {
 	// ConfirmFunc is called before executing a command.
 	// Return true to allow execution. Default: interactive Y/n prompt on stderr.
-	ConfirmFunc func(command string) bool
-	stdinReader *bufio.Reader
+	ConfirmFunc      func(command string) bool
+	stdinReader      *bufio.Reader
+	confirmOverrides map[string]bashOverride
+	getToolCallID    func(ctx context.Context) string
 }
 
-type bashInput struct {
+type BashInput struct {
 	Command string `json:"command"`
 	Timeout int    `json:"timeout"` // seconds
+}
+
+type bashOverride struct {
+	approved bool
+	skipped  bool
 }
 
 // NewBashTool creates a BashTool. If stdinReader is non-nil it is used for
@@ -50,22 +57,22 @@ func (t *BashTool) Definition() provider.ToolDef {
 	}
 }
 
-func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	in, err := ParseInput[bashInput](input)
-	if err != nil {
-		return "", fmt.Errorf("parsing input: %w", err)
+func (t *BashTool) SetConfirmOverride(toolCallID string, approved, skipped bool) {
+	if t.confirmOverrides == nil {
+		t.confirmOverrides = make(map[string]bashOverride)
 	}
+	t.confirmOverrides[toolCallID] = bashOverride{approved: approved, skipped: skipped}
+}
 
-	// Confirm with user
-	confirm := t.ConfirmFunc
-	if confirm == nil {
-		confirm = t.defaultConfirm
-	}
-	if !confirm(in.Command) {
-		return "Command rejected by user", nil
-	}
+func (t *BashTool) ClearConfirmOverrides() {
+	t.confirmOverrides = nil
+}
 
-	// Set timeout
+func (t *BashTool) SetToolCallIDGetter(fn func(ctx context.Context) string) {
+	t.getToolCallID = fn
+}
+
+func (t *BashTool) executeCommand(ctx context.Context, in BashInput) (string, error) {
 	timeout := 30
 	if in.Timeout > 0 {
 		timeout = in.Timeout
@@ -99,6 +106,40 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	}
 
 	return TruncateOutput(result, MaxOutputLen), nil
+}
+
+func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	in, err := ParseInput[BashInput](input)
+	if err != nil {
+		return "", fmt.Errorf("parsing input: %w", err)
+	}
+
+	// Check for override using tool call ID from context
+	if t.confirmOverrides != nil && t.getToolCallID != nil {
+		if toolCallID := t.getToolCallID(ctx); toolCallID != "" {
+			if override, ok := t.confirmOverrides[toolCallID]; ok {
+				if override.skipped {
+					return "Command skipped (user selected others from batch)", nil
+				}
+				if !override.approved {
+					return "Command rejected by user", nil
+				}
+				// approved: skip confirmation, proceed to execution
+				return t.executeCommand(ctx, in)
+			}
+		}
+	}
+
+	// No override: use normal confirmation
+	confirm := t.ConfirmFunc
+	if confirm == nil {
+		confirm = t.defaultConfirm
+	}
+	if !confirm(in.Command) {
+		return "Command rejected by user", nil
+	}
+
+	return t.executeCommand(ctx, in)
 }
 
 func (t *BashTool) defaultConfirm(command string) bool {
