@@ -19,8 +19,9 @@ type Config struct {
 	Tools      map[string]ToolConfig      `json:"tools"`
 	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
 	BaseURL    string                     `json:"baseURL"`
-	ProjectDir string                     `json:"-"` // set by Load(), not from JSON
-	StrictMode bool                       `json:"-"` // CLI-only, disables auto-approval
+	ProjectDir        string `json:"-"`                  // set by Load(), not from JSON
+	StrictMode        bool   `json:"-"`                  // CLI-only, disables auto-approval
+	DisableReflection bool   `json:"disableReflection"`  // skip error reflection prompts
 }
 
 type ToolConfig struct {
@@ -125,6 +126,9 @@ func merge(base, overlay *Config) *Config {
 		for k, v := range overlay.MCPServers {
 			base.MCPServers[k] = v
 		}
+	}
+	if overlay.DisableReflection {
+		base.DisableReflection = overlay.DisableReflection
 	}
 	return base
 }

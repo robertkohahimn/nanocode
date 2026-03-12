@@ -24,6 +24,14 @@ import (
 const maxIterations = 50
 const maxContextMessages = 40
 
+const errorReflectionPrompt = `<error-reflection>
+The previous tool call failed. Before your next action:
+1. What specific error occurred?
+2. What assumption was incorrect?
+3. What will you do differently this time?
+
+Do NOT retry the exact same command. If you are stuck after 2 failed attempts at the same approach, ask the user for help.
+</error-reflection>`
 
 // Engine is the core conversation loop.
 type Engine struct {
@@ -343,6 +351,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 							IsError:    true,
 						},
 					})
+					if !cfg.DisableReflection {
+						resultBlocks = append(resultBlocks, provider.ContentBlock{
+							Type: "text",
+							Text: errorReflectionPrompt,
+						})
+					}
 					continue
 				}
 				if inp.FilePath != "" {
@@ -360,6 +374,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 								IsError:    true,
 							},
 						})
+						if !cfg.DisableReflection {
+							resultBlocks = append(resultBlocks, provider.ContentBlock{
+								Type: "text",
+								Text: errorReflectionPrompt,
+							})
+						}
 						continue
 					}
 				}
@@ -370,6 +390,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				Type:       "tool_result",
 				ToolResult: result,
 			})
+			if result.IsError && !cfg.DisableReflection {
+				resultBlocks = append(resultBlocks, provider.ContentBlock{
+					Type: "text",
+					Text: errorReflectionPrompt,
+				})
+			}
 		}
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}
