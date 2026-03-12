@@ -24,16 +24,6 @@ import (
 const maxIterations = 50
 const maxContextMessages = 40
 
-const defaultSystem = `You are Nanocode, a coding assistant. You have access to tools for reading, writing, and editing files, running shell commands, searching codebases, and delegating sub-tasks.
-
-When the user gives you a task:
-1. Read relevant files to understand the codebase.
-2. Plan your approach.
-3. Make changes using the edit and write tools.
-4. Verify your changes work by running tests or the build.
-5. Report what you did.
-
-Be precise. Make minimal changes. Explain your reasoning.`
 
 // Engine is the core conversation loop.
 type Engine struct {
@@ -273,7 +263,7 @@ func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, on
 func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider.Message, cfg *config.Config, onEvent func(provider.Event)) error {
 	system := cfg.System
 	if system == "" {
-		system = defaultSystem
+		system = DefaultSystemPrompt()
 	}
 
 	// Auto-read project context file (nanocode.md) if it exists (bounded to 1MB).
