@@ -163,3 +163,54 @@ func TestChecker_Semicolons(t *testing.T) {
 		t.Error("semicolon-separated denied command should fail")
 	}
 }
+
+func TestMatchGlob(t *testing.T) {
+	tests := []struct {
+		pattern string
+		text    string
+		want    bool
+	}{
+		// Exact match (no wildcard)
+		{"pwd", "pwd", true},
+		{"pwd", "pwdx", false},
+		{"pwd", "xpwd", false},
+		{"git status", "git status", true},
+		{"git status", "git commit", false},
+
+		// Wildcard at end
+		{"ls *", "ls", true},
+		{"ls *", "ls -la", true},
+		{"ls *", "ls foo bar", true},
+		{"ls *", "lsx", false},
+		{"git *", "git status", true},
+		{"git *", "git commit -m 'msg'", true},
+
+		// Wildcard at start
+		{"* --version", "go --version", true},
+		{"* --version", "python --version", true},
+		{"* --version", "go version", false},
+
+		// Wildcard in middle
+		{"git * --dry-run", "git push --dry-run", true},
+		{"git * --dry-run", "git pull origin main --dry-run", true},
+		{"git * --dry-run", "git push", false},
+
+		// Multiple wildcards
+		{"* status *", "git status -s", true},
+		{"* * *", "a b c", true},
+		{"* * *", "a b", false},
+
+		// Empty pattern/text edge cases
+		{"*", "", true},
+		{"*", "anything", true},
+		{"", "", true},
+		{"", "x", false},
+	}
+
+	for _, tt := range tests {
+		got := matchGlob(tt.pattern, tt.text)
+		if got != tt.want {
+			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.text, got, tt.want)
+		}
+	}
+}

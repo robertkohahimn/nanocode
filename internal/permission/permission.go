@@ -8,6 +8,51 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// matchGlob checks if text matches a simple glob pattern.
+// Only * is supported as wildcard (matches any sequence of characters).
+// Special case: "cmd *" also matches "cmd" (trailing space before * is optional).
+func matchGlob(pattern, text string) bool {
+	// Empty pattern only matches empty text
+	if pattern == "" {
+		return text == ""
+	}
+
+	// Split pattern by * wildcard
+	parts := strings.Split(pattern, "*")
+
+	// No wildcards = exact match
+	if len(parts) == 1 {
+		return pattern == text
+	}
+
+	// Special case: pattern ends with " *" (space-star) and text equals prefix without space.
+	// This allows "ls *" to match both "ls" and "ls -la".
+	if len(parts) == 2 && parts[1] == "" && strings.HasSuffix(parts[0], " ") {
+		trimmedPrefix := strings.TrimSuffix(parts[0], " ")
+		if text == trimmedPrefix {
+			return true
+		}
+	}
+
+	// Check prefix (before first *)
+	if !strings.HasPrefix(text, parts[0]) {
+		return false
+	}
+	text = text[len(parts[0]):]
+
+	// Check middle parts
+	for i := 1; i < len(parts)-1; i++ {
+		idx := strings.Index(text, parts[i])
+		if idx == -1 {
+			return false
+		}
+		text = text[idx+len(parts[i]):]
+	}
+
+	// Check suffix (after last *)
+	return strings.HasSuffix(text, parts[len(parts)-1])
+}
+
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
 	"command": true,
