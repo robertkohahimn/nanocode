@@ -12,7 +12,8 @@ import (
 )
 
 type ReadTool struct {
-	BaseDir string // restrict reads to this directory; empty = no restriction
+	BaseDir string       // restrict reads to this directory; empty = no restriction
+	Tracker *FileTracker // tracks read files for read-before-edit enforcement; nil = no tracking
 }
 
 type readInput struct {
@@ -87,6 +88,10 @@ func (t *ReadTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	var buf strings.Builder
 	for i := start; i < end; i++ {
 		fmt.Fprintf(&buf, "%6d\t%s\n", i+1, lines[i])
+	}
+
+	if t.Tracker != nil {
+		t.Tracker.MarkRead(in.FilePath)
 	}
 
 	return TruncateOutput(buf.String(), MaxOutputLen), nil

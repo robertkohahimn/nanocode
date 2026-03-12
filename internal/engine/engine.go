@@ -90,12 +90,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		onChange = snapMgr.Track
 	}
 
-	writeTool := &tool.WriteTool{BaseDir: baseDir, OnChange: onChange}
-	editTool := &tool.EditTool{BaseDir: baseDir, OnChange: onChange}
+	fileTracker := tool.NewFileTracker()
+	writeTool := &tool.WriteTool{BaseDir: baseDir, OnChange: onChange, Tracker: fileTracker}
+	editTool := &tool.EditTool{BaseDir: baseDir, OnChange: onChange, Tracker: fileTracker}
 
 	// Collect built-in tools
 	allTools := []tool.Tool{
-		&tool.ReadTool{BaseDir: baseDir},
+		&tool.ReadTool{BaseDir: baseDir, Tracker: fileTracker},
 		writeTool, editTool,
 		&tool.GlobTool{},
 		&tool.GrepTool{BaseDir: baseDir},

@@ -14,6 +14,7 @@ import (
 type EditTool struct {
 	BaseDir  string              // restrict edits to this directory; empty = no restriction
 	OnChange func(filePath string) // called after successful edit; nil = no-op
+	Tracker  *FileTracker        // enforces read-before-edit; nil = no enforcement
 }
 
 type editInput struct {
@@ -50,6 +51,10 @@ func (t *EditTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 
 	if err := ValidatePath(in.FilePath, t.BaseDir); err != nil {
 		return "", err
+	}
+
+	if t.Tracker != nil && !t.Tracker.HasRead(in.FilePath) {
+		return "", fmt.Errorf("You must read a file before editing it. Use the read tool first on: %s", in.FilePath)
 	}
 
 	if in.OldString == "" {

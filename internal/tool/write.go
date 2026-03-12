@@ -13,6 +13,7 @@ import (
 type WriteTool struct {
 	BaseDir  string              // restrict writes to this directory; empty = no restriction
 	OnChange func(filePath string) // called after successful write; nil = no-op
+	Tracker  *FileTracker        // enforces read-before-overwrite; nil = no enforcement
 }
 
 type writeInput struct {
@@ -45,6 +46,16 @@ func (t *WriteTool) Execute(ctx context.Context, input json.RawMessage) (string,
 
 	if err := ValidatePath(in.FilePath, t.BaseDir); err != nil {
 		return "", err
+	}
+
+	// For overwrites (file already exists), enforce read-before-write.
+	// New files are exempt.
+	if t.Tracker != nil {
+		if _, statErr := os.Stat(in.FilePath); statErr == nil {
+			if !t.Tracker.HasRead(in.FilePath) {
+				return "", fmt.Errorf("You must read a file before overwriting it. Use the read tool first on: %s", in.FilePath)
+			}
+		}
 	}
 
 	dir := filepath.Dir(in.FilePath)
