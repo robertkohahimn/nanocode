@@ -50,6 +50,8 @@ Extend the permission system to support glob-pattern-based auto-approval of safe
 }
 ```
 
+**Default behavior:** If `autoApprove` is not specified or empty, no commands are auto-approved (all require Y/n confirmation). This is the conservative default.
+
 ## API Changes
 
 ### permission.go
@@ -134,6 +136,8 @@ Run: git push origin main [Y/n]
 | `internal/config/config_test.go` | Test autoApprove parsing and merge behavior |
 | `internal/permission/permission_test.go` | Test glob matching and auto-approve logic |
 
+**Dependencies:** No new dependencies required. Glob matching uses standard library string operations. Shell parsing continues to use `mvdan.cc/sh/v3` (already in go.mod).
+
 ## Testing Strategy
 
 ### Glob Matching Tests
@@ -148,6 +152,11 @@ Run: git push origin main [Y/n]
 - Pipeline where one command doesn't match returns `AutoApprove=false`
 - Command matching both deny and autoApprove returns `Allowed=false`
 - autoApprove implies allow (no explicit allow list needed)
+
+### Security Tests
+- Patterns cannot be injected via command input (pattern is config, not user input)
+- Commands with special glob characters in them are matched literally
+- `*` in patterns only, not in commands being checked
 
 ### Existing Tests
 - All existing allow/deny tests continue to pass
