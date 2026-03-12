@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/tool"
 )
@@ -26,7 +27,7 @@ type HTTPClient struct {
 func NewHTTPClient(baseURL string) *HTTPClient {
 	return &HTTPClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 		nextID:     1,
 	}
 }
@@ -72,10 +73,11 @@ func (c *HTTPClient) Initialize(ctx context.Context) error {
 
 // ListTools discovers all tools, handling cursor pagination.
 func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
+	const maxPages = 100
 	var allTools []ToolInfo
 	var cursor string
 
-	for {
+	for page := 0; page < maxPages; page++ {
 		var params interface{}
 		if cursor != "" {
 			params = ListToolsParams{Cursor: cursor}
@@ -97,6 +99,9 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 			break
 		}
 		cursor = result.NextCursor
+	}
+	if cursor != "" {
+		return nil, fmt.Errorf("mcp http tools/list: exceeded %d pages", maxPages)
 	}
 	return allTools, nil
 }
@@ -164,8 +169,9 @@ func (c *HTTPClient) Call(ctx context.Context, method string, params interface{}
 
 // readSSEResult reads SSE events and extracts the JSON-RPC result.
 func (c *HTTPClient) readSSEResult(body io.Reader, expectedID int) (json.RawMessage, error) {
+	const maxSSEEvents = 1000
 	reader := newSimpleSSEReader(body)
-	for {
+	for eventCount := 0; eventCount < maxSSEEvents; eventCount++ {
 		event, err := reader.Next()
 		if err != nil {
 			return nil, fmt.Errorf("mcp http: reading SSE: %w", err)
@@ -188,6 +194,7 @@ func (c *HTTPClient) readSSEResult(body io.Reader, expectedID int) (json.RawMess
 			}
 		}
 	}
+	return nil, fmt.Errorf("mcp http: exceeded %d SSE events without matching result", maxSSEEvents)
 }
 
 // Tools returns tool.Tool adapters for all discovered MCP tools.

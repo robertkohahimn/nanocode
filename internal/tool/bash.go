@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
@@ -18,6 +19,7 @@ type BashTool struct {
 	// Return true to allow execution. Default: interactive Y/n prompt on stderr.
 	ConfirmFunc      func(command string) bool
 	stdinReader      *bufio.Reader
+	mu               sync.RWMutex // protects confirmOverrides
 	confirmOverrides map[string]bashOverride
 	getToolCallID    func(ctx context.Context) string
 }
@@ -58,6 +60,8 @@ func (t *BashTool) Definition() provider.ToolDef {
 }
 
 func (t *BashTool) SetConfirmOverride(toolCallID string, approved, skipped bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.confirmOverrides == nil {
 		t.confirmOverrides = make(map[string]bashOverride)
 	}
@@ -65,6 +69,8 @@ func (t *BashTool) SetConfirmOverride(toolCallID string, approved, skipped bool)
 }
 
 func (t *BashTool) ClearConfirmOverrides() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.confirmOverrides = nil
 }
 
@@ -124,9 +130,12 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	}
 
 	// Check for override using tool call ID from context
-	if t.confirmOverrides != nil && t.getToolCallID != nil {
+	t.mu.RLock()
+	overrides := t.confirmOverrides
+	t.mu.RUnlock()
+	if overrides != nil && t.getToolCallID != nil {
 		if toolCallID := t.getToolCallID(ctx); toolCallID != "" {
-			if override, ok := t.confirmOverrides[toolCallID]; ok {
+			if override, ok := overrides[toolCallID]; ok {
 				if override.skipped {
 					return "Command skipped (user selected others from batch)", nil
 				}

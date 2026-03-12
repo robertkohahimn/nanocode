@@ -41,7 +41,6 @@ type Engine struct {
 	config      *config.Config
 	mcpClients  []io.Closer           // MCP subprocess handles
 	snapMgr     *snapshot.Manager     // nil if no project dir
-	stdinReader *bufio.Reader         // shared stdin reader for confirmations
 	permChecker *permission.Checker   // bash command permission checker (may be nil)
 }
 
@@ -200,11 +199,21 @@ func (e *Engine) persistMessage(ctx context.Context, sessionID string, role prov
 func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onEvent func(provider.Event)) error {
 	subCfg := *e.config
 	subCfg.System = systemPrompt
-	// Deep copy the Tools map to prevent mutation of parent config
+	// Deep copy the Tools map and slice fields to prevent mutation of parent config
 	if e.config.Tools != nil {
 		subCfg.Tools = make(map[string]config.ToolConfig, len(e.config.Tools))
 		for k, v := range e.config.Tools {
-			subCfg.Tools[k] = v
+			tc := config.ToolConfig{}
+			if len(v.Allow) > 0 {
+				tc.Allow = append([]string(nil), v.Allow...)
+			}
+			if len(v.Deny) > 0 {
+				tc.Deny = append([]string(nil), v.Deny...)
+			}
+			if len(v.AutoApprove) > 0 {
+				tc.AutoApprove = append([]string(nil), v.AutoApprove...)
+			}
+			subCfg.Tools[k] = tc
 		}
 	}
 
