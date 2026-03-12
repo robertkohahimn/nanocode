@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,9 +20,10 @@ type Config struct {
 	Tools      map[string]ToolConfig      `json:"tools"`
 	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
 	BaseURL    string                     `json:"baseURL"`
-	ProjectDir        string `json:"-"`                  // set by Load(), not from JSON
-	StrictMode        bool   `json:"-"`                  // CLI-only, disables auto-approval
-	DisableReflection bool   `json:"disableReflection"`  // skip error reflection prompts
+	ProjectDir        string    `json:"-"`                  // set by Load(), not from JSON
+	StrictMode        bool      `json:"-"`                  // CLI-only, disables auto-approval
+	DisableReflection bool      `json:"disableReflection"`  // skip error reflection prompts
+	LogWriter         io.Writer `json:"-"`                  // structured log output (nil = no logging)
 }
 
 type ToolConfig struct {

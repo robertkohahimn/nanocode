@@ -290,16 +290,27 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		}
 	}
 
+	// Structured logging for engine decisions
+	logger := NewEngineLogger(sessionID, cfg.LogWriter)
+	loopStart := time.Now()
+	var iterations int
+	defer func() {
+		logger.LogSessionEnd(iterations, time.Since(loopStart))
+	}()
+
 	// Track per-file edits to detect doom loops (same file edited repeatedly).
 	fileEditCounts := make(map[string]int)
 	const maxFileEdits = 5
 
-	for i := 0; i < maxIterations; i++ {
+	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
 		windowed := windowMessages(messages, maxContextMessages)
+		if len(windowed) < len(messages) {
+			logger.LogContextWindow(len(messages), len(windowed))
+		}
 
 		req := &provider.Request{
 			Model:     cfg.Model,
@@ -311,12 +322,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 
 		events, err := e.provider.Stream(ctx, req)
 		if err != nil {
-			return fmt.Errorf("provider stream (iteration %d): %w", i+1, err)
+			return fmt.Errorf("provider stream (iteration %d): %w", iterations+1, err)
 		}
 
 		assistantMsg, err := collectResponse(events, onEvent)
 		if err != nil {
-			return fmt.Errorf("collecting response (iteration %d): %w", i+1, err)
+			return fmt.Errorf("collecting response (iteration %d): %w", iterations+1, err)
 		}
 
 		// Persist assistant message
@@ -329,6 +340,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				toolCalls = append(toolCalls, cb.ToolCall)
 			}
 		}
+
+		logger.LogIteration(iterations+1, len(toolCalls))
 
 		// If no tool calls, we are done
 		if len(toolCalls) == 0 {
@@ -366,6 +379,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					}
 					fileEditCounts[key]++
 					if fileEditCounts[key] > maxFileEdits {
+						logger.LogDoomLoop(key, fileEditCounts[key])
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
 							ToolResult: &provider.ToolResult{
@@ -385,7 +399,9 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				}
 			}
 
+			toolStart := time.Now()
 			result := e.tools.Execute(ctx, tc)
+			logger.LogToolCall(tc.Name, time.Since(toolStart), result.IsError)
 			resultBlocks = append(resultBlocks, provider.ContentBlock{
 				Type:       "tool_result",
 				ToolResult: result,

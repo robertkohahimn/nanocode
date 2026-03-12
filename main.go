@@ -30,7 +30,7 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm := parseArgs(os.Args[1:])
+	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm, logPath := parseArgs(os.Args[1:])
 	if autoConfirm {
 		fmt.Fprintln(os.Stderr, "⚠️  Auto-confirm enabled: all shell commands will run without confirmation")
 	}
@@ -45,6 +45,19 @@ func run() error {
 	}
 	if strictMode {
 		cfg.StrictMode = true
+	}
+
+	if logPath != "" {
+		if logPath == "stderr" || logPath == "-" {
+			cfg.LogWriter = os.Stderr
+		} else {
+			logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+			if err != nil {
+				return fmt.Errorf("opening log file: %w", err)
+			}
+			defer logFile.Close()
+			cfg.LogWriter = logFile
+		}
 	}
 
 	if cfg.APIKey == "" {
@@ -152,7 +165,7 @@ func run() error {
 	}
 }
 
-func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string, autoConfirm bool) {
+func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string, autoConfirm bool, logPath string) {
 	var parts []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -173,6 +186,13 @@ func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bo
 				modelOverride = args[i]
 			} else {
 				fmt.Fprintln(os.Stderr, "warning: --model requires a value")
+			}
+		case "--log":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				logPath = args[i]
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: --log requires a value")
 			}
 		case "--yes", "-y":
 			autoConfirm = true
