@@ -49,6 +49,7 @@ type Engine struct {
 // stdinReader is shared with the REPL loop to avoid conflicting buffered readers.
 func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
+	bashTool.SetToolCallIDGetter(ToolCallIDFromContext)
 
 	// Permission system: wire allow/deny lists into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
