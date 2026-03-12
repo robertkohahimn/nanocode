@@ -56,3 +56,30 @@ func TestParseSelection_None(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSelection_Numbers(t *testing.T) {
+	tests := []struct {
+		input    string
+		count    int
+		expected []bool
+	}{
+		{"1", 3, []bool{true, false, false}},
+		{"1,3", 3, []bool{true, false, true}},
+		{"2,3", 3, []bool{false, true, true}},
+		{"1,2,3", 3, []bool{true, true, true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result, err := parseSelection(tt.input, tt.count)
+			if err != nil {
+				t.Fatalf("parseSelection(%q, %d): %v", tt.input, tt.count, err)
+			}
+			for i, want := range tt.expected {
+				if result[i] != want {
+					t.Errorf("index %d: got %v, want %v", i, result[i], want)
+				}
+			}
+		})
+	}
+}
