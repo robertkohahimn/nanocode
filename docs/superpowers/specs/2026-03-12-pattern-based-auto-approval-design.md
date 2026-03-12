@@ -114,7 +114,7 @@ For pipelines like `ls | grep foo`:
 
 ## User Experience
 
-```
+```text
 # Blocked command (red)
 Blocked: "rm -rf /" is in the deny list
 
@@ -168,3 +168,4 @@ Run: git push origin main [Y/n]
 - Meta-commands and wrapper commands are hardcoded blocks, not configurable
 - Variable expansion in commands is blocked (cannot validate statically)
 - `--strict` flag provides escape hatch for sensitive operations
+- **Deny/AutoApprove matching asymmetry:** Deny patterns match against both the full command string AND the base command name (more conservative for security), while autoApprove patterns only match against the full command string. This ensures deny patterns like `rm *` catch all variations of dangerous commands.
