@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -60,6 +62,68 @@ func parseSelection(input string, count int) ([]bool, error) {
 			return nil, fmt.Errorf("selection %d out of range (1-%d)", n, count)
 		}
 		result[n-1] = true
+	}
+
+	return result, nil
+}
+
+// batchDecision represents the user's decision for a single command.
+type batchDecision struct {
+	approved bool
+	skipped  bool // true if user selected others but not this one
+}
+
+// pendingCommand represents a bash command awaiting confirmation.
+type pendingCommand struct {
+	toolCallID string
+	command    string
+}
+
+// promptBatch displays a numbered list of commands and prompts for selection.
+// Returns a map of toolCallID -> decision.
+func promptBatch(commands []pendingCommand, reader *bufio.Reader, output io.Writer) (map[string]batchDecision, error) {
+	// Display numbered list
+	fmt.Fprintf(output, "\033[33mPending commands:\033[0m\n")
+	for i, cmd := range commands {
+		fmt.Fprintf(output, "  %d. %s\n", i+1, cmd.command)
+	}
+	fmt.Fprintf(output, "\nRun all? \033[2m[Y/n/1,3,4]\033[0m ")
+
+	// Read user input
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		// On EOF or error, reject all
+		result := make(map[string]batchDecision)
+		for _, cmd := range commands {
+			result[cmd.toolCallID] = batchDecision{approved: false, skipped: false}
+		}
+		return result, nil
+	}
+
+	// Parse selection
+	selected, err := parseSelection(line, len(commands))
+	if err != nil {
+		// On parse error, ask again (for now, just return the error)
+		return nil, fmt.Errorf("invalid selection: %w", err)
+	}
+
+	// Build decisions map
+	result := make(map[string]batchDecision)
+	anySelected := false
+	for _, s := range selected {
+		if s {
+			anySelected = true
+			break
+		}
+	}
+
+	for i, cmd := range commands {
+		if selected[i] {
+			result[cmd.toolCallID] = batchDecision{approved: true, skipped: false}
+		} else {
+			// skipped = true only if user selected others (partial selection)
+			result[cmd.toolCallID] = batchDecision{approved: false, skipped: anySelected}
+		}
 	}
 
 	return result, nil

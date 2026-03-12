@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"bufio"
+	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +132,45 @@ func TestParseSelection_Invalid(t *testing.T) {
 				t.Errorf("expected error for input %q", tt.input)
 			}
 		})
+	}
+}
+
+func TestPromptBatch_ApproveAll(t *testing.T) {
+	// Simulate user typing "Y\n"
+	input := bytes.NewBufferString("Y\n")
+	reader := bufio.NewReader(input)
+
+	var output bytes.Buffer
+
+	commands := []pendingCommand{
+		{toolCallID: "tc1", command: "mkdir -p project"},
+		{toolCallID: "tc2", command: "pwd"},
+		{toolCallID: "tc3", command: "ls"},
+	}
+
+	decisions, err := promptBatch(commands, reader, &output)
+	if err != nil {
+		t.Fatalf("promptBatch: %v", err)
+	}
+
+	// All should be approved
+	for _, cmd := range commands {
+		dec, ok := decisions[cmd.toolCallID]
+		if !ok {
+			t.Errorf("missing decision for %s", cmd.toolCallID)
+			continue
+		}
+		if !dec.approved {
+			t.Errorf("expected %s to be approved", cmd.toolCallID)
+		}
+		if dec.skipped {
+			t.Errorf("expected %s to not be skipped", cmd.toolCallID)
+		}
+	}
+
+	// Check output contains the commands
+	outStr := output.String()
+	if !strings.Contains(outStr, "mkdir -p project") {
+		t.Errorf("output should contain command, got: %s", outStr)
 	}
 }
