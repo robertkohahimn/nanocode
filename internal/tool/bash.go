@@ -127,8 +127,9 @@ func (t *BashTool) defaultConfirm(command string) bool {
 func extractFirstLine(output string, maxLen int) string {
 	firstLine := strings.SplitN(output, "\n", 2)[0]
 	firstLine = strings.TrimSpace(firstLine)
-	if len(firstLine) > maxLen {
-		firstLine = firstLine[:maxLen]
+	runes := []rune(firstLine)
+	if len(runes) > maxLen {
+		firstLine = string(runes[:maxLen])
 	}
 	return firstLine
 }

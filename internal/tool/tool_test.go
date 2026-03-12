@@ -360,6 +360,8 @@ func TestExtractFirstLine(t *testing.T) {
 		{"multiline with long first", "this is a very long first line\nsecond", 20, "this is a very long "},
 		{"whitespace only", "   \n\n", 60, ""},
 		{"leading whitespace", "  trimmed line\nnext", 60, "trimmed line"},
+		{"utf8 truncation", "日本語テキスト", 5, "日本語テキ"},
+		{"utf8 emoji truncation", "Hello 👋🌍🎉 World", 10, "Hello 👋🌍🎉 "},
 	}
 
 	for _, tt := range tests {
