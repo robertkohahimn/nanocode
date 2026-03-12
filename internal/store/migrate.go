@@ -35,6 +35,21 @@ var migrations = []string{
 		created_at INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_snapshots_session ON snapshots(session_id, created_at);`,
+
+	// Version 3: add ON DELETE CASCADE to messages table
+	// SQLite doesn't support ALTER TABLE for foreign key changes, so we recreate the table
+	`CREATE TABLE messages_new (
+		id         TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		role       TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+		content    TEXT NOT NULL,
+		metadata   TEXT NOT NULL DEFAULT '{}',
+		created_at INTEGER NOT NULL
+	);
+	INSERT INTO messages_new SELECT * FROM messages;
+	DROP TABLE messages;
+	ALTER TABLE messages_new RENAME TO messages;
+	CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);`,
 }
 
 // Migrate ensures the database schema is up to date.
@@ -60,13 +75,14 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("applying migration %d: %w", i+1, err)
 		}
 
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("setting version %d: %w", i+1, err)
-		}
-
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("committing migration %d: %w", i+1, err)
+		}
+
+		// PRAGMA user_version is not transactional in SQLite, so set it after commit
+		// This ensures version is only bumped after migration succeeds
+		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+			return fmt.Errorf("setting version %d: %w", i+1, err)
 		}
 	}
 

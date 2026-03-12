@@ -54,23 +54,63 @@ func matchGlob(pattern, text string) bool {
 }
 
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
+// wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
-	"command": true,
-	"env":     true,
-	"xargs":   true,
-	"find":    true,
-	"nohup":   true,
-	"timeout": true,
-	"nice":    true,
-	"strace":  true,
-	"sudo":    true,
+	"bash":     true, // can execute scripts or commands
+	"sh":       true, // can execute scripts or commands
+	"builtin":  true, // can invoke shell builtins like eval
+	"source":   true, // sources/executes script files
+	"command":  true,
+	"env":      true,
+	"xargs":    true,
+	"find":     true,
+	"nohup":    true,
+	"timeout":  true,
+	"nice":     true,
+	"strace":   true,
+	"sudo":     true,
+	"time":     true,
+	"watch":    true,
+	"parallel": true,
+	"ssh":      true,
+	"su":       true,
+	"doas":     true,
+	"runuser":  true,
+	"pkexec":   true,
+	"chroot":   true,
+	"script":   true,
 }
 
-// canonicalize trims quotes and extracts the base name from a command string.
+// canonicalize normalizes a command name by stripping leading backslashes,
+// removing outer quotes, and extracting the base name.
 func canonicalize(raw string) string {
 	raw = strings.TrimSpace(raw)
+	// Strip leading backslashes (e.g., \eval -> eval)
+	raw = strings.TrimLeft(raw, `\`)
 	raw = strings.Trim(raw, `"'`)
 	return filepath.Base(raw)
+}
+
+// extractCommandName resolves the command name from an AST word by
+// concatenating literal parts. This handles mixed quotes like "ev"'al'.
+func extractCommandName(word *syntax.Word) string {
+	var result strings.Builder
+	for _, part := range word.Parts {
+		switch p := part.(type) {
+		case *syntax.Lit:
+			result.WriteString(p.Value)
+		case *syntax.SglQuoted:
+			result.WriteString(p.Value)
+		case *syntax.DblQuoted:
+			// Recurse into double-quoted parts
+			for _, inner := range p.Parts {
+				if lit, ok := inner.(*syntax.Lit); ok {
+					result.WriteString(lit.Value)
+				}
+			}
+		}
+	}
+	return result.String()
 }
 
 // CheckResult contains the outcome of command validation.
@@ -135,10 +175,8 @@ func (c *Checker) Check(command string) CheckResult {
 			return true
 		}
 
-		// Extract command name and normalize to base name
-		var nameBuf strings.Builder
-		printer.Print(&nameBuf, call.Args[0])
-		name := nameBuf.String()
+		// Extract command name using AST to handle mixed quotes properly
+		name := extractCommandName(call.Args[0])
 		nameBase := canonicalize(name)
 		if nameBase == "" || nameBase == "." {
 			result = CheckResult{Allowed: false, Reason: "blocked: empty command name"}
@@ -162,19 +200,11 @@ func (c *Checker) Check(command string) CheckResult {
 		}
 
 		// Wrapper commands that can execute arbitrary sub-commands
+		// This includes bash/sh which are blocked entirely rather than trying to
+		// detect dangerous flags like -c, since they can execute scripts directly.
 		if wrapperCommands[nameBase] {
 			result = CheckResult{Allowed: false, Reason: fmt.Sprintf("blocked: %q is not permitted (can execute arbitrary commands)", nameBase)}
 			return false
-		}
-
-		// bash -c / sh -c: check first argument
-		if (nameBase == "bash" || nameBase == "sh") && len(call.Args) > 1 {
-			var argBuf strings.Builder
-			printer.Print(&argBuf, call.Args[1])
-			if argBuf.String() == "-c" {
-				result = CheckResult{Allowed: false, Reason: fmt.Sprintf("blocked: %q with -c is not permitted (arbitrary command execution)", nameBase)}
-				return false
-			}
 		}
 
 		// Build full command string for glob matching

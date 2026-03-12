@@ -37,18 +37,28 @@ Be precise. Make minimal changes. Explain your reasoning.`
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider   provider.Provider
-	tools      *ToolRegistry
-	store      store.Store
-	config     *config.Config
-	mcpClients []io.Closer          // MCP subprocess handles
-	snapMgr    *snapshot.Manager     // nil if no project dir
+	provider    provider.Provider
+	tools       *ToolRegistry
+	store       store.Store
+	config      *config.Config
+	mcpClients  []io.Closer           // MCP subprocess handles
+	snapMgr     *snapshot.Manager     // nil if no project dir
+	stdinReader *bufio.Reader         // shared stdin reader for confirmations
+	permChecker *permission.Checker   // bash command permission checker (may be nil)
 }
 
 // New creates an Engine with the given dependencies.
 // stdinReader is shared with the REPL loop to avoid conflicting buffered readers.
-func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader) *Engine {
+func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader, autoConfirm bool) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
+	bashTool.SetToolCallIDGetter(ToolCallIDFromContext)
+
+	// Auto-confirm mode: skip interactive prompts
+	if autoConfirm {
+		bashTool.ConfirmFunc = func(command string) bool {
+			return true
+		}
+	}
 
 	// Permission system: wire allow/deny/autoApprove into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {

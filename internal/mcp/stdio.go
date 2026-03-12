@@ -17,10 +17,17 @@ type StdioClient struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	enc    *json.Encoder
-	dec    *json.Decoder
 	stderr *boundedBuffer
-	mu     sync.Mutex // serializes JSON-RPC calls
-	nextID int
+
+	mu       sync.Mutex // protects nextID, enc, and pending
+	nextID   int
+	pending  map[int]chan responseOrError // per-request response channels
+	closeErr error                         // error from reader goroutine
+}
+
+type responseOrError struct {
+	resp *JSONRPCResponse
+	err  error
 }
 
 // NewStdioClient starts an MCP subprocess and prepares JSON-RPC communication.
@@ -58,14 +65,46 @@ func NewStdioClient(command string, args []string, env []string) (*StdioClient, 
 	buf := newBoundedBuffer(64 * 1024)
 	go buf.drainFrom(stderrPipe)
 
-	return &StdioClient{
-		cmd:    cmd,
-		stdin:  stdinPipe,
-		enc:    json.NewEncoder(stdinPipe),
-		dec:    json.NewDecoder(stdoutPipe),
-		stderr: buf,
-		nextID: 1,
-	}, nil
+	c := &StdioClient{
+		cmd:     cmd,
+		stdin:   stdinPipe,
+		enc:     json.NewEncoder(stdinPipe),
+		stderr:  buf,
+		nextID:  1,
+		pending: make(map[int]chan responseOrError),
+	}
+
+	// Start background reader to demux responses
+	dec := json.NewDecoder(stdoutPipe)
+	go c.readLoop(dec)
+
+	return c, nil
+}
+
+// readLoop continuously reads responses and routes them to pending requests.
+func (c *StdioClient) readLoop(dec *json.Decoder) {
+	for {
+		var resp JSONRPCResponse
+		if err := dec.Decode(&resp); err != nil {
+			c.mu.Lock()
+			c.closeErr = err
+			// Signal all pending requests
+			for id, ch := range c.pending {
+				ch <- responseOrError{err: err}
+				delete(c.pending, id)
+			}
+			c.mu.Unlock()
+			return
+		}
+
+		c.mu.Lock()
+		if ch, ok := c.pending[resp.ID]; ok {
+			ch <- responseOrError{resp: &resp}
+			delete(c.pending, resp.ID)
+		}
+		// Ignore notifications (responses without matching ID)
+		c.mu.Unlock()
+	}
 }
 
 // Initialize performs the MCP handshake: initialize request + initialized notification.
@@ -127,11 +166,18 @@ func (c *StdioClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 
 // Call sends a JSON-RPC request and waits for the response.
 func (c *StdioClient) Call(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+	// Create response channel and register it
+	respCh := make(chan responseOrError, 1)
+
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	if c.closeErr != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("mcp: connection closed: %w", c.closeErr)
+	}
 
 	id := c.nextID
 	c.nextID++
+	c.pending[id] = respCh
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -141,42 +187,29 @@ func (c *StdioClient) Call(ctx context.Context, method string, params interface{
 	}
 
 	if err := c.enc.Encode(req); err != nil {
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return nil, fmt.Errorf("mcp: sending %s: %w (stderr: %s)", method, err, c.stderr.String())
 	}
+	c.mu.Unlock()
 
-	// Spawn a goroutine that kills the subprocess if the context expires.
-	// This is needed because Decode blocks on I/O and won't notice ctx cancellation.
-	stop := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			if c.cmd.Process != nil {
-				_ = c.cmd.Process.Kill()
-			}
-		case <-stop:
+	// Wait for response or context cancellation
+	select {
+	case <-ctx.Done():
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		// Don't kill the subprocess here - other calls may be in flight.
+		// Process shutdown is handled by Close().
+		return nil, ctx.Err()
+	case result := <-respCh:
+		if result.err != nil {
+			return nil, fmt.Errorf("mcp: reading %s response: %w (stderr: %s)", method, result.err, c.stderr.String())
 		}
-	}()
-	defer close(stop)
-
-	// Read response — skip notifications (messages without an id matching ours).
-	for {
-		var resp JSONRPCResponse
-		if err := c.dec.Decode(&resp); err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("mcp: reading %s response: %w (stderr: %s)", method, err, c.stderr.String())
+		if result.resp.Error != nil {
+			return nil, result.resp.Error
 		}
-
-		if resp.ID != id {
-			// Skip server-initiated notifications or responses to other requests
-			continue
-		}
-
-		if resp.Error != nil {
-			return nil, resp.Error
-		}
-		return resp.Result, nil
+		return result.resp.Result, nil
 	}
 }
 
@@ -243,12 +276,20 @@ func (b *boundedBuffer) write(data []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	// If write length alone exceeds capacity, buffer will be full
+	if len(data) >= b.cap {
+		b.full = true
+	}
+
+	prevPos := b.pos
 	for _, c := range data {
 		b.buf[b.pos] = c
 		b.pos = (b.pos + 1) % b.cap
-		if b.pos == 0 {
-			b.full = true
-		}
+	}
+
+	// Buffer is full if we wrapped around (write crossed the capacity boundary)
+	if !b.full && prevPos+len(data) >= b.cap {
+		b.full = true
 	}
 }
 
