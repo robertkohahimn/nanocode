@@ -190,6 +190,63 @@ func TestChecker_AutoApprove(t *testing.T) {
 	}
 }
 
+func TestChecker_AutoApprovePipeline(t *testing.T) {
+	c := NewChecker(nil, nil, []string{"ls *", "grep *", "wc *"})
+
+	// All commands match autoApprove
+	result := c.Check("ls -la | grep foo | wc -l")
+	if !result.Allowed || !result.AutoApprove {
+		t.Errorf("pipeline of auto-approved commands should auto-approve: Allowed=%v, AutoApprove=%v", result.Allowed, result.AutoApprove)
+	}
+
+	// One command doesn't match
+	result = c.Check("ls -la | grep foo | sort")
+	if !result.Allowed {
+		t.Error("pipeline should be allowed (no deny)")
+	}
+	if result.AutoApprove {
+		t.Error("pipeline with non-matching command should NOT auto-approve")
+	}
+}
+
+func TestChecker_DenyPrecedence(t *testing.T) {
+	// autoApprove includes rm, but deny blocks it
+	c := NewChecker(nil, []string{"rm *"}, []string{"ls *", "rm *"})
+
+	result := c.Check("ls -la")
+	if !result.Allowed || !result.AutoApprove {
+		t.Errorf("ls should be auto-approved: Allowed=%v, AutoApprove=%v", result.Allowed, result.AutoApprove)
+	}
+
+	result = c.Check("rm -rf /")
+	if result.Allowed {
+		t.Error("rm should be denied even though it matches autoApprove")
+	}
+}
+
+func TestChecker_AutoApproveImpliesAllow(t *testing.T) {
+	// allow list set, but autoApprove should bypass it
+	c := NewChecker([]string{"go"}, nil, []string{"ls *"})
+
+	result := c.Check("go build")
+	if !result.Allowed {
+		t.Error("go should be allowed (in allow list)")
+	}
+
+	result = c.Check("ls -la")
+	if !result.Allowed {
+		t.Error("ls should be allowed (autoApprove implies allow)")
+	}
+	if !result.AutoApprove {
+		t.Error("ls should be auto-approved")
+	}
+
+	result = c.Check("git status")
+	if result.Allowed {
+		t.Error("git should NOT be allowed (not in allow list, not in autoApprove)")
+	}
+}
+
 func TestMatchGlob(t *testing.T) {
 	tests := []struct {
 		pattern string
