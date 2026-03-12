@@ -129,9 +129,16 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		return "", fmt.Errorf("parsing input: %w", err)
 	}
 
-	// Check for override using tool call ID from context
+	// Check for override using tool call ID from context.
+	// Snapshot the map under lock to avoid concurrent map read/write.
 	t.mu.RLock()
-	overrides := t.confirmOverrides
+	var overrides map[string]bashOverride
+	if t.confirmOverrides != nil {
+		overrides = make(map[string]bashOverride, len(t.confirmOverrides))
+		for k, v := range t.confirmOverrides {
+			overrides[k] = v
+		}
+	}
 	t.mu.RUnlock()
 	if overrides != nil && t.getToolCallID != nil {
 		if toolCallID := t.getToolCallID(ctx); toolCallID != "" {

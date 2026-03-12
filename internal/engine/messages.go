@@ -11,7 +11,7 @@ import (
 // point to avoid splitting tool_use/tool_result pairs, which would cause
 // API errors from both Anthropic and OpenAI.
 func windowMessages(msgs []provider.Message, maxN int) []provider.Message {
-	if len(msgs) <= maxN {
+	if maxN <= 0 || len(msgs) <= maxN {
 		return msgs
 	}
 	// Start index for the tail (after reserving slot 0 for the first message)

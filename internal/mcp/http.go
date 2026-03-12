@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,7 +28,13 @@ type HTTPClient struct {
 func NewHTTPClient(baseURL string) *HTTPClient {
 	return &HTTPClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
+				TLSHandshakeTimeout: 10 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
+			},
+		},
 		nextID:     1,
 	}
 }
@@ -95,10 +102,10 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 
 		allTools = append(allTools, result.Tools...)
 
-		if result.NextCursor == "" {
+		cursor = result.NextCursor
+		if cursor == "" {
 			break
 		}
-		cursor = result.NextCursor
 	}
 	if cursor != "" {
 		return nil, fmt.Errorf("mcp http tools/list: exceeded %d pages", maxPages)

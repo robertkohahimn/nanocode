@@ -194,7 +194,7 @@ func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bo
 				fmt.Fprintln(os.Stderr, "warning: --model requires a value")
 			}
 		case "--log":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if i+1 < len(args) && (args[i+1] == "-" || !strings.HasPrefix(args[i+1], "-")) {
 				i++
 				logPath = args[i]
 			} else {

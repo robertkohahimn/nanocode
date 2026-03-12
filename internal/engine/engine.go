@@ -363,6 +363,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					FilePath string `json:"file_path"`
 				}
 				if err := json.Unmarshal(tc.Input, &inp); err != nil {
+					logger.LogToolCall(tc.Name, 0, true)
 					resultBlocks = append(resultBlocks, provider.ContentBlock{
 						Type: "tool_result",
 						ToolResult: &provider.ToolResult{
@@ -386,6 +387,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					}
 					fileEditCounts[key]++
 					if fileEditCounts[key] > maxFileEdits {
+						logger.LogToolCall(tc.Name, 0, true)
 						logger.LogDoomLoop(key, fileEditCounts[key])
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
