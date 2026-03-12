@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
 	"github.com/robertkohahimn/nanocode/internal/mcp"
@@ -61,16 +60,21 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		}
 	}
 
-	// Permission system: wire allow/deny lists into bash confirm hook
-	var permChecker *permission.Checker
+	// Permission system: wire allow/deny/autoApprove into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
-		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
-			permChecker = permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
+		hasPermConfig := len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 || len(bashCfg.AutoApprove) > 0
+		if hasPermConfig {
+			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny, bashCfg.AutoApprove)
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
-				if err := permChecker.Check(cmd); err != nil {
-					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", err)
+				result := checker.Check(cmd)
+				if !result.Allowed {
+					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", result.Reason)
 					return false
+				}
+				if result.AutoApprove && !cfg.StrictMode {
+					fmt.Fprintf(os.Stderr, "\033[32mAuto-approved:\033[0m %s\n", cmd)
+					return true
 				}
 				return origConfirm(cmd)
 			}
@@ -153,13 +157,11 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	eng := &Engine{
-		provider:    p,
-		store:       s,
-		config:      cfg,
-		mcpClients:  mcpClients,
-		snapMgr:     snapMgr,
-		stdinReader: stdinReader,
-		permChecker: permChecker,
+		provider:   p,
+		store:      s,
+		config:     cfg,
+		mcpClients: mcpClients,
+		snapMgr:    snapMgr,
 	}
 
 	subagentTool := &tool.SubagentTool{Runner: eng}
@@ -204,21 +206,6 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 		subCfg.Tools = make(map[string]config.ToolConfig, len(e.config.Tools))
 		for k, v := range e.config.Tools {
 			subCfg.Tools[k] = v
-		}
-	}
-	// Deep copy the MCPServers map to prevent mutation of parent config
-	// Must also clone slice fields (Args, Env) to avoid sharing backing arrays
-	if e.config.MCPServers != nil {
-		subCfg.MCPServers = make(map[string]config.MCPServerConfig, len(e.config.MCPServers))
-		for k, v := range e.config.MCPServers {
-			copied := v
-			if v.Args != nil {
-				copied.Args = append([]string(nil), v.Args...)
-			}
-			if v.Env != nil {
-				copied.Env = append([]string(nil), v.Env...)
-			}
-			subCfg.MCPServers[k] = copied
 		}
 	}
 
@@ -295,17 +282,9 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			data, readErr := io.ReadAll(io.LimitReader(f, maxProjectCtx+1))
 			f.Close()
 			if readErr == nil && len(data) > 0 {
-				var content string
+				content := string(data)
 				if len(data) > maxProjectCtx {
-					// Truncate at a valid UTF-8 rune boundary, reserving space for suffix
-					const suffix = "\n... (truncated at 1MB)"
-					cut := maxProjectCtx - len(suffix)
-					for cut > 0 && !utf8.RuneStart(data[cut]) {
-						cut--
-					}
-					content = string(data[:cut]) + suffix
-				} else {
-					content = string(data)
+					content = content[:maxProjectCtx] + "\n... (truncated at 1MB)"
 				}
 				system += "\n\n# Project Context\n\n" + content
 			}
@@ -357,17 +336,6 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			return nil
 		}
 
-		// Batch confirmation for multiple bash commands
-		var bashToolForClear *tool.BashTool
-		if bashT, ok := e.tools.Get("bash"); ok {
-			if bt, ok := bashT.(*tool.BashTool); ok {
-				if err := collectBashConfirmations(toolCalls, bt, e.permChecker, e.stdinReader, os.Stderr); err != nil {
-					return fmt.Errorf("batch confirmation: %w", err)
-				}
-				bashToolForClear = bt
-			}
-		}
-
 		// Execute tools with doom loop detection
 		var resultBlocks []provider.ContentBlock
 		for _, tc := range toolCalls {
@@ -411,11 +379,6 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				Type:       "tool_result",
 				ToolResult: result,
 			})
-		}
-
-		// Clear batch overrides after tool execution
-		if bashToolForClear != nil {
-			bashToolForClear.ClearConfirmOverrides()
 		}
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}

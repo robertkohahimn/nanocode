@@ -127,3 +127,33 @@ func TestProjectDirPreservedAfterMerge(t *testing.T) {
 		t.Errorf("ProjectDir should be preserved after merge, got %s", cfg.ProjectDir)
 	}
 }
+
+func TestLoadAutoApprove(t *testing.T) {
+	dir := t.TempDir()
+	configJSON := `{
+		"tools": {
+			"bash": {
+				"autoApprove": ["ls *", "pwd", "cat *"]
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "nanocode.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	bashCfg, ok := cfg.Tools["bash"]
+	if !ok {
+		t.Fatal("expected bash tool config")
+	}
+	if len(bashCfg.AutoApprove) != 3 {
+		t.Errorf("expected 3 autoApprove patterns, got %d", len(bashCfg.AutoApprove))
+	}
+	if bashCfg.AutoApprove[0] != "ls *" {
+		t.Errorf("expected first pattern 'ls *', got %q", bashCfg.AutoApprove[0])
+	}
+}

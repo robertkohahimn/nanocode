@@ -159,7 +159,7 @@ func collectBashConfirmations(
 
 		// Check permission - skip blocked commands (they'll fail at execution)
 		if permChecker != nil {
-			if err := permChecker.Check(in.Command); err != nil {
+			if result := permChecker.Check(in.Command); !result.Allowed {
 				continue
 			}
 		}
