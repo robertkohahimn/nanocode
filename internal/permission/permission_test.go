@@ -6,97 +6,97 @@ import (
 )
 
 func TestChecker_AllowList(t *testing.T) {
-	c := NewChecker([]string{"go", "git", "ls"}, nil)
+	c := NewChecker([]string{"go", "git", "ls"}, nil, nil)
 
 	tests := []struct {
-		cmd     string
-		wantErr bool
+		cmd       string
+		wantAllow bool
 	}{
-		{"go build ./...", false},
-		{"git status", false},
-		{"ls -la", false},
-		{"rm -rf /", true},
-		{"curl http://example.com", true},
+		{"go build ./...", true},
+		{"git status", true},
+		{"ls -la", true},
+		{"rm -rf /", false},
+		{"curl http://example.com", false},
 	}
 
 	for _, tt := range tests {
-		err := c.Check(tt.cmd)
-		if (err != nil) != tt.wantErr {
-			t.Errorf("Check(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+		result := c.Check(tt.cmd)
+		if result.Allowed != tt.wantAllow {
+			t.Errorf("Check(%q).Allowed = %v, want %v (reason: %s)", tt.cmd, result.Allowed, tt.wantAllow, result.Reason)
 		}
 	}
 }
 
 func TestChecker_DenyList(t *testing.T) {
-	c := NewChecker(nil, []string{"rm", "curl", "wget"})
+	c := NewChecker(nil, []string{"rm", "curl", "wget"}, nil)
 
 	tests := []struct {
-		cmd     string
-		wantErr bool
+		cmd       string
+		wantAllow bool
 	}{
-		{"go build ./...", false},
-		{"ls -la", false},
-		{"rm -rf /", true},
-		{"curl http://example.com", true},
-		{"wget http://example.com", true},
+		{"go build ./...", true},
+		{"ls -la", true},
+		{"rm -rf /", false},
+		{"curl http://example.com", false},
+		{"wget http://example.com", false},
 	}
 
 	for _, tt := range tests {
-		err := c.Check(tt.cmd)
-		if (err != nil) != tt.wantErr {
-			t.Errorf("Check(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+		result := c.Check(tt.cmd)
+		if result.Allowed != tt.wantAllow {
+			t.Errorf("Check(%q).Allowed = %v, want %v (reason: %s)", tt.cmd, result.Allowed, tt.wantAllow, result.Reason)
 		}
 	}
 }
 
 func TestChecker_AllowAndDeny(t *testing.T) {
 	// Allow go and git, but deny git (deny takes precedence)
-	c := NewChecker([]string{"go", "git"}, []string{"git"})
+	c := NewChecker([]string{"go", "git"}, []string{"git"}, nil)
 
-	if err := c.Check("go build"); err != nil {
-		t.Errorf("go should be allowed: %v", err)
+	if result := c.Check("go build"); !result.Allowed {
+		t.Errorf("go should be allowed: %s", result.Reason)
 	}
-	if err := c.Check("git push"); err == nil {
+	if result := c.Check("git push"); result.Allowed {
 		t.Error("git should be denied (in deny list)")
 	}
 }
 
 func TestChecker_Pipes(t *testing.T) {
-	c := NewChecker([]string{"echo", "grep"}, nil)
+	c := NewChecker([]string{"echo", "grep"}, nil, nil)
 
-	if err := c.Check("echo hello | grep hello"); err != nil {
-		t.Errorf("pipe of allowed commands should pass: %v", err)
+	if result := c.Check("echo hello | grep hello"); !result.Allowed {
+		t.Errorf("pipe of allowed commands should pass: %s", result.Reason)
 	}
 
-	if err := c.Check("echo hello | rm -rf /"); err == nil {
+	if result := c.Check("echo hello | rm -rf /"); result.Allowed {
 		t.Error("pipe with disallowed command should fail")
 	}
 }
 
 func TestChecker_CommandSubstitution(t *testing.T) {
-	c := NewChecker([]string{"echo"}, nil)
+	c := NewChecker([]string{"echo"}, nil, nil)
 
-	if err := c.Check("echo $(rm -rf /)"); err == nil {
+	if result := c.Check("echo $(rm -rf /)"); result.Allowed {
 		t.Error("command substitution with disallowed command should fail")
 	}
 }
 
 func TestChecker_Subshell(t *testing.T) {
-	c := NewChecker([]string{"echo"}, nil)
+	c := NewChecker([]string{"echo"}, nil, nil)
 
-	if err := c.Check("(rm -rf /)"); err == nil {
+	if result := c.Check("(rm -rf /)"); result.Allowed {
 		t.Error("subshell with disallowed command should fail")
 	}
 }
 
 func TestChecker_MetaCommands(t *testing.T) {
 	// Even with no allow/deny lists, meta-commands are always blocked
-	c := NewChecker(nil, nil)
+	c := NewChecker(nil, nil, nil)
 
 	tests := []struct {
-		cmd     string
-		wantErr bool
-		errMsg  string
+		cmd        string
+		wantDenied bool
+		errMsg     string
 	}{
 		{"eval echo hello", true, "eval"},
 		{"exec /bin/sh", true, "exec"},
@@ -107,60 +107,86 @@ func TestChecker_MetaCommands(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := c.Check(tt.cmd)
-		if (err != nil) != tt.wantErr {
-			t.Errorf("Check(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+		result := c.Check(tt.cmd)
+		if result.Allowed == tt.wantDenied {
+			t.Errorf("Check(%q).Allowed = %v, want %v", tt.cmd, result.Allowed, !tt.wantDenied)
 		}
-		if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.errMsg) {
-			t.Errorf("Check(%q) error %q should mention %q", tt.cmd, err, tt.errMsg)
+		if tt.wantDenied && !strings.Contains(result.Reason, tt.errMsg) {
+			t.Errorf("Check(%q) reason %q should mention %q", tt.cmd, result.Reason, tt.errMsg)
 		}
 	}
 }
 
 func TestChecker_VariableExpansion(t *testing.T) {
-	c := NewChecker([]string{"echo"}, nil)
+	c := NewChecker([]string{"echo"}, nil, nil)
 
-	if err := c.Check("$CMD arg1 arg2"); err == nil {
+	if result := c.Check("$CMD arg1 arg2"); result.Allowed {
 		t.Error("variable expansion in command name should be blocked")
 	}
-	if err := c.Check("${CMD} arg1"); err == nil {
+	if result := c.Check("${CMD} arg1"); result.Allowed {
 		t.Error("braced variable expansion in command name should be blocked")
 	}
 }
 
 func TestChecker_MalformedInput(t *testing.T) {
-	c := NewChecker(nil, nil)
+	c := NewChecker(nil, nil, nil)
 
-	if err := c.Check("if then else fi ;; {{"); err == nil {
+	if result := c.Check("if then else fi ;; {{"); result.Allowed {
 		t.Error("malformed input should be rejected")
 	}
 }
 
 func TestChecker_NoRestrictions(t *testing.T) {
 	// No allow or deny = only meta-commands blocked
-	c := NewChecker(nil, nil)
+	c := NewChecker(nil, nil, nil)
 
-	if err := c.Check("rm -rf / && curl evil.com"); err != nil {
-		t.Errorf("no restrictions should allow anything except meta-commands: %v", err)
+	if result := c.Check("rm -rf / && curl evil.com"); !result.Allowed {
+		t.Errorf("no restrictions should allow anything except meta-commands: %s", result.Reason)
 	}
 }
 
 func TestChecker_ChainedCommands(t *testing.T) {
-	c := NewChecker([]string{"go", "echo"}, nil)
+	c := NewChecker([]string{"go", "echo"}, nil, nil)
 
-	if err := c.Check("go build && echo done"); err != nil {
-		t.Errorf("chained allowed commands should pass: %v", err)
+	if result := c.Check("go build && echo done"); !result.Allowed {
+		t.Errorf("chained allowed commands should pass: %s", result.Reason)
 	}
-	if err := c.Check("go build && rm -rf /"); err == nil {
+	if result := c.Check("go build && rm -rf /"); result.Allowed {
 		t.Error("chain with disallowed command should fail")
 	}
 }
 
 func TestChecker_Semicolons(t *testing.T) {
-	c := NewChecker(nil, []string{"rm"})
+	c := NewChecker(nil, []string{"rm"}, nil)
 
-	if err := c.Check("echo hello; rm -rf /"); err == nil {
+	if result := c.Check("echo hello; rm -rf /"); result.Allowed {
 		t.Error("semicolon-separated denied command should fail")
+	}
+}
+
+func TestChecker_AutoApprove(t *testing.T) {
+	c := NewChecker(nil, nil, []string{"ls *", "pwd", "cat *"})
+
+	tests := []struct {
+		cmd         string
+		wantAllowed bool
+		wantAuto    bool
+	}{
+		{"ls -la", true, true},
+		{"pwd", true, true},
+		{"cat /etc/passwd", true, true},
+		{"rm -rf /", true, false}, // allowed (no deny), but not auto-approved
+		{"git status", true, false},
+	}
+
+	for _, tt := range tests {
+		result := c.Check(tt.cmd)
+		if result.Allowed != tt.wantAllowed {
+			t.Errorf("Check(%q).Allowed = %v, want %v", tt.cmd, result.Allowed, tt.wantAllowed)
+		}
+		if result.AutoApprove != tt.wantAuto {
+			t.Errorf("Check(%q).AutoApprove = %v, want %v", tt.cmd, result.AutoApprove, tt.wantAuto)
+		}
 	}
 }
 

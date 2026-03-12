@@ -53,11 +53,12 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	// Permission system: wire allow/deny lists into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
 		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
-			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
+			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny, nil)
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
-				if err := checker.Check(cmd); err != nil {
-					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", err)
+				result := checker.Check(cmd)
+				if !result.Allowed {
+					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", result.Reason)
 					return false
 				}
 				return origConfirm(cmd)
