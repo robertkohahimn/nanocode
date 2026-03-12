@@ -95,11 +95,13 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		if timedOut {
 			result += fmt.Sprintf("\n(timed out after %ds)", timeout)
 		}
-		exitCode = -1
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+			result = fmt.Sprintf("Exit code %d\n%s", exitCode, result)
+		} else {
+			// Non-ExitError failures (startup errors, context cancellation, etc.)
+			result = fmt.Sprintf("Command failed: %s\n%s", err.Error(), result)
 		}
-		result = fmt.Sprintf("Exit code %d\n%s", exitCode, result)
 	}
 
 	// Print visual feedback to stderr
@@ -140,6 +142,9 @@ func formatCommandFeedback(output string, exitCode int, timedOut bool) string {
 	firstLine := extractFirstLine(output, 60)
 
 	if timedOut {
+		if firstLine != "" {
+			return fmt.Sprintf("\033[33m⏱\033[0m timed out: %s", firstLine)
+		}
 		return "\033[33m⏱\033[0m timed out"
 	}
 	if exitCode == 0 {

@@ -408,8 +408,16 @@ func TestFormatCommandFeedback(t *testing.T) {
 			wantText: "exit 127",
 		},
 		{
-			name:     "timeout",
+			name:     "timeout with output",
 			output:   "partial output",
+			exitCode: -1,
+			timedOut: true,
+			wantIcon: "⏱",
+			wantText: "timed out: partial output",
+		},
+		{
+			name:     "timeout empty output",
+			output:   "",
 			exitCode: -1,
 			timedOut: true,
 			wantIcon: "⏱",
