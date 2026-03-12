@@ -468,3 +468,56 @@ func TestBashTool_ConfirmOverride_Approved(t *testing.T) {
 		t.Errorf("expected hello, got %q", result)
 	}
 }
+
+func TestBashTool_ConfirmOverride_Skipped(t *testing.T) {
+	bt := NewBashTool(nil)
+	bt.SetToolCallIDGetter(func(ctx context.Context) string {
+		if id, ok := ctx.Value("tool_call_id").(string); ok {
+			return id
+		}
+		return ""
+	})
+	bt.SetConfirmOverride("test-id", false, true) // skipped
+	defer bt.ClearConfirmOverrides()
+
+	ctx := mockToolCallIDContext("test-id")
+	result, err := bt.Execute(ctx, json.RawMessage(`{"command":"echo nope"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "skipped") {
+		t.Errorf("expected skipped message, got %q", result)
+	}
+}
+
+func TestBashTool_NoOverride_FallsBack(t *testing.T) {
+	bt := NewBashTool(nil)
+	bt.SetToolCallIDGetter(func(ctx context.Context) string {
+		if id, ok := ctx.Value("tool_call_id").(string); ok {
+			return id
+		}
+		return ""
+	})
+	// Set override for different ID
+	bt.SetConfirmOverride("other-id", true, false)
+	defer bt.ClearConfirmOverrides()
+
+	confirmCalled := false
+	bt.ConfirmFunc = func(string) bool {
+		confirmCalled = true
+		return true
+	}
+
+	// Execute with ID that has no override
+	ctx := mockToolCallIDContext("test-id")
+	result, err := bt.Execute(ctx, json.RawMessage(`{"command":"echo hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !confirmCalled {
+		t.Error("ConfirmFunc should have been called for non-overridden ID")
+	}
+	if !strings.Contains(result, "hi") {
+		t.Errorf("expected hi, got %q", result)
+	}
+}
