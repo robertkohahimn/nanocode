@@ -87,16 +87,25 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	output, err := cmd.CombinedOutput()
 	result := string(output)
 
+	// Determine exit status for feedback
+	exitCode := 0
+	timedOut := false
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		timedOut = cmdCtx.Err() == context.DeadlineExceeded
+		if timedOut {
 			result += fmt.Sprintf("\n(timed out after %ds)", timeout)
 		}
-		exitCode := -1
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+			result = fmt.Sprintf("Exit code %d\n%s", exitCode, result)
+		} else {
+			// Non-ExitError failures (startup errors, context cancellation, etc.)
+			result = fmt.Sprintf("Command failed: %s\n%s", err.Error(), result)
 		}
-		result = fmt.Sprintf("Exit code %d\n%s", exitCode, result)
 	}
+
+	// Print visual feedback to stderr
+	fmt.Fprintln(os.Stderr, formatCommandFeedback(string(output), exitCode, timedOut))
 
 	return TruncateOutput(result, MaxOutputLen), nil
 }
@@ -113,4 +122,40 @@ func (t *BashTool) defaultConfirm(command string) bool {
 	}
 	line = strings.TrimSpace(strings.ToLower(line))
 	return line == "" || line == "y" || line == "yes"
+}
+
+// extractFirstLine returns the first non-empty line of output, trimmed and
+// truncated to maxLen characters.
+func extractFirstLine(output string, maxLen int) string {
+	firstLine := strings.SplitN(output, "\n", 2)[0]
+	firstLine = strings.TrimSpace(firstLine)
+	runes := []rune(firstLine)
+	if len(runes) > maxLen {
+		firstLine = string(runes[:maxLen])
+	}
+	return firstLine
+}
+
+// formatCommandFeedback returns a formatted feedback string for display after
+// a command completes. It includes a status icon and optional output preview.
+func formatCommandFeedback(output string, exitCode int, timedOut bool) string {
+	firstLine := extractFirstLine(output, 60)
+
+	if timedOut {
+		if firstLine != "" {
+			return fmt.Sprintf("\033[33m⏱\033[0m timed out: %s", firstLine)
+		}
+		return "\033[33m⏱\033[0m timed out"
+	}
+	if exitCode == 0 {
+		if firstLine != "" {
+			return fmt.Sprintf("\033[32m✓\033[0m %s", firstLine)
+		}
+		return "\033[32m✓\033[0m"
+	}
+	// Non-zero exit
+	if firstLine != "" {
+		return fmt.Sprintf("\033[31m✗\033[0m exit %d: %s", exitCode, firstLine)
+	}
+	return fmt.Sprintf("\033[31m✗\033[0m exit %d", exitCode)
 }
