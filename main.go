@@ -30,7 +30,7 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	prompt, sessionID, listMode, modelOverride := parseArgs(os.Args[1:])
+	prompt, sessionID, listMode, strictMode, modelOverride := parseArgs(os.Args[1:])
 	projectDir := detectProject()
 
 	cfg, err := config.Load(projectDir)
@@ -39,6 +39,9 @@ func run() error {
 	}
 	if modelOverride != "" {
 		cfg.Model = modelOverride
+	}
+	if strictMode {
+		cfg.StrictMode = true
 	}
 
 	if cfg.APIKey == "" {
@@ -146,7 +149,7 @@ func run() error {
 	}
 }
 
-func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOverride string) {
+func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string) {
 	var parts []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -159,6 +162,8 @@ func parseArgs(args []string) (prompt, sessionID string, listMode bool, modelOve
 			}
 		case "--list":
 			listMode = true
+		case "--strict":
+			strictMode = true
 		case "--model":
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++

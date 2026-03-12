@@ -11,15 +11,16 @@ import (
 
 // Config is the top-level configuration structure.
 type Config struct {
-	Provider   string                `json:"provider"`
-	Model      string                `json:"model"`
-	APIKey     string                `json:"apiKey"`
-	MaxTokens  int                   `json:"maxTokens"`
-	System     string                `json:"system"`
+	Provider   string                     `json:"provider"`
+	Model      string                     `json:"model"`
+	APIKey     string                     `json:"apiKey"`
+	MaxTokens  int                        `json:"maxTokens"`
+	System     string                     `json:"system"`
 	Tools      map[string]ToolConfig      `json:"tools"`
 	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
 	BaseURL    string                     `json:"baseURL"`
 	ProjectDir string                     `json:"-"` // set by Load(), not from JSON
+	StrictMode bool                       `json:"-"` // CLI-only, disables auto-approval
 }
 
 type ToolConfig struct {
