@@ -50,16 +50,21 @@ type Engine struct {
 func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
 
-	// Permission system: wire allow/deny lists into bash confirm hook
+	// Permission system: wire allow/deny/autoApprove into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
-		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
-			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny, nil)
+		hasPermConfig := len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 || len(bashCfg.AutoApprove) > 0
+		if hasPermConfig {
+			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny, bashCfg.AutoApprove)
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
 				result := checker.Check(cmd)
 				if !result.Allowed {
 					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", result.Reason)
 					return false
+				}
+				if result.AutoApprove && !cfg.StrictMode {
+					fmt.Fprintf(os.Stderr, "\033[32mAuto-approved:\033[0m %s\n", cmd)
+					return true
 				}
 				return origConfirm(cmd)
 			}
