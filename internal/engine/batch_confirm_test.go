@@ -174,3 +174,60 @@ func TestPromptBatch_ApproveAll(t *testing.T) {
 		t.Errorf("output should contain command, got: %s", outStr)
 	}
 }
+
+func TestPromptBatch_PartialSelection(t *testing.T) {
+	input := bytes.NewBufferString("1,3\n")
+	reader := bufio.NewReader(input)
+	var output bytes.Buffer
+
+	commands := []pendingCommand{
+		{toolCallID: "tc1", command: "mkdir"},
+		{toolCallID: "tc2", command: "pwd"},
+		{toolCallID: "tc3", command: "ls"},
+	}
+
+	decisions, err := promptBatch(commands, reader, &output)
+	if err != nil {
+		t.Fatalf("promptBatch: %v", err)
+	}
+
+	// tc1 and tc3 approved, tc2 skipped
+	if !decisions["tc1"].approved {
+		t.Error("tc1 should be approved")
+	}
+	if decisions["tc2"].approved {
+		t.Error("tc2 should NOT be approved")
+	}
+	if !decisions["tc2"].skipped {
+		t.Error("tc2 should be marked as skipped")
+	}
+	if !decisions["tc3"].approved {
+		t.Error("tc3 should be approved")
+	}
+}
+
+func TestPromptBatch_RejectAll(t *testing.T) {
+	input := bytes.NewBufferString("n\n")
+	reader := bufio.NewReader(input)
+	var output bytes.Buffer
+
+	commands := []pendingCommand{
+		{toolCallID: "tc1", command: "mkdir"},
+		{toolCallID: "tc2", command: "pwd"},
+	}
+
+	decisions, err := promptBatch(commands, reader, &output)
+	if err != nil {
+		t.Fatalf("promptBatch: %v", err)
+	}
+
+	for _, cmd := range commands {
+		dec := decisions[cmd.toolCallID]
+		if dec.approved {
+			t.Errorf("%s should NOT be approved", cmd.toolCallID)
+		}
+		if dec.skipped {
+			t.Errorf("%s should NOT be skipped (reject all, not partial)", cmd.toolCallID)
+		}
+	}
+}
