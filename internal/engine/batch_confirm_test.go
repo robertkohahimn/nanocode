@@ -83,3 +83,51 @@ func TestParseSelection_Numbers(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSelection_Spaces(t *testing.T) {
+	result, err := parseSelection("1 3", 4)
+	if err != nil {
+		t.Fatalf("parseSelection: %v", err)
+	}
+	expected := []bool{true, false, true, false}
+	for i, want := range expected {
+		if result[i] != want {
+			t.Errorf("index %d: got %v, want %v", i, result[i], want)
+		}
+	}
+}
+
+func TestParseSelection_Range(t *testing.T) {
+	result, err := parseSelection("1-3", 4)
+	if err != nil {
+		t.Fatalf("parseSelection: %v", err)
+	}
+	expected := []bool{true, true, true, false}
+	for i, want := range expected {
+		if result[i] != want {
+			t.Errorf("index %d: got %v, want %v", i, result[i], want)
+		}
+	}
+}
+
+func TestParseSelection_Invalid(t *testing.T) {
+	tests := []struct {
+		input string
+		count int
+	}{
+		{"abc", 3},
+		{"0", 3},      // out of range (1-based)
+		{"4", 3},      // out of range
+		{"1-5", 3},    // range exceeds count
+		{"3-1", 3},    // inverted range
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			_, err := parseSelection(tt.input, tt.count)
+			if err == nil {
+				t.Errorf("expected error for input %q", tt.input)
+			}
+		})
+	}
+}
