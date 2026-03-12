@@ -223,3 +223,45 @@ func TestWindowMessages(t *testing.T) {
 		t.Errorf("expected 3 messages, got %d", len(windowed))
 	}
 }
+
+func TestEngineAutoConfirm(t *testing.T) {
+	st, err := store.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Response that triggers a bash tool call
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
+					ID:    "tc1",
+					Name:  "bash",
+					Input: json.RawMessage(`{"command":"echo hello"}`),
+				}},
+				{Type: provider.EventDone},
+			},
+			{
+				{Type: provider.EventTextDelta, Text: "Done"},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+
+	// Create engine with autoConfirm=true
+	eng := New(mp, st, testConfig(), nil, true)
+	ctx := context.Background()
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+
+	// Should complete without blocking on stdin
+	err = eng.Run(ctx, sessionID, "run echo", func(ev provider.Event) {})
+	if err != nil {
+		t.Fatalf("Run with autoConfirm=true: %v", err)
+	}
+
+	// Verify bash tool was called (2 provider calls = tool was executed)
+	if mp.callIdx != 2 {
+		t.Errorf("expected 2 provider calls, got %d", mp.callIdx)
+	}
+}
