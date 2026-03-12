@@ -6,6 +6,10 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/robertkohahimn/nanocode/internal/permission"
+	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/tool"
 )
 
 // parseSelection parses user input and returns a slice of booleans indicating
@@ -127,4 +131,68 @@ func promptBatch(commands []pendingCommand, reader *bufio.Reader, output io.Writ
 	}
 
 	return result, nil
+}
+
+// collectBashConfirmations checks pending bash commands and prompts for batch confirmation.
+// Returns nil if batch confirmation was not needed (0-1 commands needing confirmation).
+func collectBashConfirmations(
+	toolCalls []*provider.ToolCall,
+	bashTool *tool.BashTool,
+	permChecker *permission.Checker,
+	reader *bufio.Reader,
+	output io.Writer,
+) error {
+	// Collect bash commands that need confirmation
+	var pending []pendingCommand
+	for _, tc := range toolCalls {
+		if tc.Name != "bash" {
+			continue
+		}
+
+		// Parse the bash input to get the command
+		in, err := tool.ParseInput[tool.BashInput](tc.Input)
+		if err != nil {
+			// Skip commands we can't parse - they'll fail at execution time
+			continue
+		}
+
+		// Check if command needs confirmation using permission checker
+		// If permChecker is nil, all commands need confirmation
+		needsConfirm := true
+		if permChecker != nil {
+			// If Check returns nil, command is auto-approved (allowed by rules)
+			// But we still need to ask for confirmation in batch mode
+			// The permission checker just blocks denied commands
+			if err := permChecker.Check(in.Command); err != nil {
+				// Command is blocked by permission rules - skip it
+				// It will fail when executed
+				continue
+			}
+		}
+
+		if needsConfirm {
+			pending = append(pending, pendingCommand{
+				toolCallID: tc.ID,
+				command:    in.Command,
+			})
+		}
+	}
+
+	// If 0-1 commands need confirmation, let normal flow handle it
+	if len(pending) <= 1 {
+		return nil
+	}
+
+	// Prompt for batch confirmation
+	decisions, err := promptBatch(pending, reader, output)
+	if err != nil {
+		return fmt.Errorf("batch confirmation: %w", err)
+	}
+
+	// Set overrides on bash tool
+	for toolCallID, dec := range decisions {
+		bashTool.SetConfirmOverride(toolCallID, dec.approved, dec.skipped)
+	}
+
+	return nil
 }

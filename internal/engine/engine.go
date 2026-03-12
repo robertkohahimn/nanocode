@@ -37,12 +37,14 @@ Be precise. Make minimal changes. Explain your reasoning.`
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider   provider.Provider
-	tools      *ToolRegistry
-	store      store.Store
-	config     *config.Config
-	mcpClients []io.Closer          // MCP subprocess handles
-	snapMgr    *snapshot.Manager     // nil if no project dir
+	provider    provider.Provider
+	tools       *ToolRegistry
+	store       store.Store
+	config      *config.Config
+	mcpClients  []io.Closer           // MCP subprocess handles
+	snapMgr     *snapshot.Manager     // nil if no project dir
+	stdinReader *bufio.Reader         // shared stdin reader for confirmations
+	permChecker *permission.Checker   // bash command permission checker (may be nil)
 }
 
 // New creates an Engine with the given dependencies.
@@ -52,12 +54,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	bashTool.SetToolCallIDGetter(ToolCallIDFromContext)
 
 	// Permission system: wire allow/deny lists into bash confirm hook
+	var permChecker *permission.Checker
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
 		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
-			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
+			permChecker = permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
-				if err := checker.Check(cmd); err != nil {
+				if err := permChecker.Check(cmd); err != nil {
 					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", err)
 					return false
 				}
@@ -142,11 +145,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	eng := &Engine{
-		provider:   p,
-		store:      s,
-		config:     cfg,
-		mcpClients: mcpClients,
-		snapMgr:    snapMgr,
+		provider:    p,
+		store:       s,
+		config:      cfg,
+		mcpClients:  mcpClients,
+		snapMgr:     snapMgr,
+		stdinReader: stdinReader,
+		permChecker: permChecker,
 	}
 
 	subagentTool := &tool.SubagentTool{Runner: eng}
@@ -319,6 +324,16 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		// If no tool calls, we are done
 		if len(toolCalls) == 0 {
 			return nil
+		}
+
+		// Batch confirmation for multiple bash commands
+		if bashT, ok := e.tools.Get("bash"); ok {
+			if bt, ok := bashT.(*tool.BashTool); ok {
+				if err := collectBashConfirmations(toolCalls, bt, e.permChecker, e.stdinReader, os.Stderr); err != nil {
+					return fmt.Errorf("batch confirmation: %w", err)
+				}
+				defer bt.ClearConfirmOverrides()
+			}
 		}
 
 		// Execute tools with doom loop detection
