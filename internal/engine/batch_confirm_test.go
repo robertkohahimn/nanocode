@@ -32,3 +32,27 @@ func TestParseSelection_All(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSelection_None(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{"N"},
+		{"n"},
+		{"no"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result, err := parseSelection(tt.input, 3)
+			if err != nil {
+				t.Fatalf("parseSelection(%q, 3): %v", tt.input, err)
+			}
+			for i, selected := range result {
+				if selected {
+					t.Errorf("expected index %d to NOT be selected", i)
+				}
+			}
+		})
+	}
+}

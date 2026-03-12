@@ -19,5 +19,10 @@ func parseSelection(input string, count int) ([]bool, error) {
 		return result, nil
 	}
 
+	// "n" or "no" = reject all
+	if input == "n" || input == "no" {
+		return result, nil // all false
+	}
+
 	return result, fmt.Errorf("unrecognized input: %q", input)
 }
