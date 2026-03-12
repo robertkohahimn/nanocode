@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
@@ -319,8 +320,10 @@ func TestEngineAutoConfirmRespectsPermissions(t *testing.T) {
 	lastMsg := secondReq.Messages[len(secondReq.Messages)-1]
 	for _, cb := range lastMsg.Content {
 		if cb.Type == "tool_result" && cb.ToolResult != nil {
-			if cb.ToolResult.Content != "Command rejected by user" {
-				t.Logf("Tool result: %s", cb.ToolResult.Content)
+			// Verify it's actually a rejection, not a successful execution
+			if !strings.Contains(cb.ToolResult.Content, "rejected") && !strings.Contains(cb.ToolResult.Content, "Blocked") {
+				t.Errorf("expected rejection message, got: %s", cb.ToolResult.Content)
+				return
 			}
 			// The command should have been rejected (blocked by permission)
 			return

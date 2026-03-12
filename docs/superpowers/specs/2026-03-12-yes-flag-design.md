@@ -18,7 +18,7 @@ Add `--yes` / `-y` command-line flags that automatically approve all bash comman
 - Security blocks (eval, exec, sudo, etc.) remain enforced
 
 **Warning message:**
-```
+```text
 ⚠️  Auto-confirm enabled: all shell commands will run without confirmation
 ```
 
