@@ -48,8 +48,15 @@ type Engine struct {
 
 // New creates an Engine with the given dependencies.
 // stdinReader is shared with the REPL loop to avoid conflicting buffered readers.
-func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader) *Engine {
+func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader, autoConfirm bool) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
+
+	// Auto-confirm mode: skip interactive prompts
+	if autoConfirm {
+		bashTool.ConfirmFunc = func(command string) bool {
+			return true
+		}
+	}
 
 	// Permission system: wire allow/deny lists into bash confirm hook
 	if bashCfg, ok := cfg.Tools["bash"]; ok {

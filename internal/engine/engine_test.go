@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
@@ -67,7 +68,7 @@ func TestEngineTextOnly(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
@@ -118,7 +119,7 @@ func TestEngineToolCallThenText(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
 
@@ -157,7 +158,7 @@ func TestEngineProviderError(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	ctx := context.Background()
 	sessionID, _ := st.CreateSession(ctx, "/tmp")
 
@@ -183,7 +184,7 @@ func TestEngineContextCancellation(t *testing.T) {
 		},
 	}
 
-	eng := New(mp, st, testConfig(), nil)
+	eng := New(mp, st, testConfig(), nil, false)
 	sessionID, _ := st.CreateSession(context.Background(), "/tmp")
 
 	err = eng.Run(ctx, sessionID, "hi", func(ev provider.Event) {})
@@ -222,4 +223,111 @@ func TestWindowMessages(t *testing.T) {
 	if len(windowed) != 3 {
 		t.Errorf("expected 3 messages, got %d", len(windowed))
 	}
+}
+
+func TestEngineAutoConfirm(t *testing.T) {
+	st, err := store.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Response that triggers a bash tool call
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
+					ID:    "tc1",
+					Name:  "bash",
+					Input: json.RawMessage(`{"command":"echo hello"}`),
+				}},
+				{Type: provider.EventDone},
+			},
+			{
+				{Type: provider.EventTextDelta, Text: "Done"},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+
+	// Create engine with autoConfirm=true
+	eng := New(mp, st, testConfig(), nil, true)
+	ctx := context.Background()
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+
+	// Should complete without blocking on stdin
+	err = eng.Run(ctx, sessionID, "run echo", func(ev provider.Event) {})
+	if err != nil {
+		t.Fatalf("Run with autoConfirm=true: %v", err)
+	}
+
+	// Verify bash tool was called (2 provider calls = tool was executed)
+	if mp.callIdx != 2 {
+		t.Errorf("expected 2 provider calls, got %d", mp.callIdx)
+	}
+}
+
+func TestEngineAutoConfirmRespectsPermissions(t *testing.T) {
+	st, err := store.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Response that triggers a bash tool call with a command that will be blocked
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
+					ID:    "tc1",
+					Name:  "bash",
+					Input: json.RawMessage(`{"command":"rm -rf /"}`),
+				}},
+				{Type: provider.EventDone},
+			},
+			{
+				{Type: provider.EventTextDelta, Text: "Done"},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+
+	// Create config with deny list
+	cfg := testConfig()
+	cfg.Tools = map[string]config.ToolConfig{
+		"bash": {Deny: []string{"rm"}},
+	}
+
+	// Create engine with autoConfirm=true but with deny list
+	eng := New(mp, st, cfg, nil, true)
+	ctx := context.Background()
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+
+	err = eng.Run(ctx, sessionID, "delete everything", func(ev provider.Event) {})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verify the tool result indicates the command was blocked
+	// The second request should contain a tool_result with the blocked message
+	if len(mp.requests) < 2 {
+		t.Fatal("expected at least 2 requests")
+	}
+	secondReq := mp.requests[1]
+	if len(secondReq.Messages) == 0 {
+		t.Fatal("expected messages in second request")
+	}
+	lastMsg := secondReq.Messages[len(secondReq.Messages)-1]
+	for _, cb := range lastMsg.Content {
+		if cb.Type == "tool_result" && cb.ToolResult != nil {
+			// Verify it's actually a rejection, not a successful execution
+			if !strings.Contains(cb.ToolResult.Content, "rejected") && !strings.Contains(cb.ToolResult.Content, "Blocked") {
+				t.Errorf("expected rejection message, got: %s", cb.ToolResult.Content)
+				return
+			}
+			// The command should have been rejected (blocked by permission)
+			return
+		}
+	}
+	t.Error("expected tool result with rejection message")
 }
