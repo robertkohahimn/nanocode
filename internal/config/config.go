@@ -23,8 +23,9 @@ type Config struct {
 }
 
 type ToolConfig struct {
-	Allow []string `json:"allow"`
-	Deny  []string `json:"deny"`
+	Allow       []string `json:"allow"`
+	Deny        []string `json:"deny"`
+	AutoApprove []string `json:"autoApprove"`
 }
 
 // MCPServerConfig describes an external MCP tool server.
