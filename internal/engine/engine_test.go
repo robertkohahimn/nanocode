@@ -265,3 +265,66 @@ func TestEngineAutoConfirm(t *testing.T) {
 		t.Errorf("expected 2 provider calls, got %d", mp.callIdx)
 	}
 }
+
+func TestEngineAutoConfirmRespectsPermissions(t *testing.T) {
+	st, err := store.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Response that triggers a bash tool call with a command that will be blocked
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
+					ID:    "tc1",
+					Name:  "bash",
+					Input: json.RawMessage(`{"command":"rm -rf /"}`),
+				}},
+				{Type: provider.EventDone},
+			},
+			{
+				{Type: provider.EventTextDelta, Text: "Done"},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+
+	// Create config with deny list
+	cfg := testConfig()
+	cfg.Tools = map[string]config.ToolConfig{
+		"bash": {Deny: []string{"rm"}},
+	}
+
+	// Create engine with autoConfirm=true but with deny list
+	eng := New(mp, st, cfg, nil, true)
+	ctx := context.Background()
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+
+	err = eng.Run(ctx, sessionID, "delete everything", func(ev provider.Event) {})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verify the tool result indicates the command was blocked
+	// The second request should contain a tool_result with the blocked message
+	if len(mp.requests) < 2 {
+		t.Fatal("expected at least 2 requests")
+	}
+	secondReq := mp.requests[1]
+	if len(secondReq.Messages) == 0 {
+		t.Fatal("expected messages in second request")
+	}
+	lastMsg := secondReq.Messages[len(secondReq.Messages)-1]
+	for _, cb := range lastMsg.Content {
+		if cb.Type == "tool_result" && cb.ToolResult != nil {
+			if cb.ToolResult.Content != "Command rejected by user" {
+				t.Logf("Tool result: %s", cb.ToolResult.Content)
+			}
+			// The command should have been rejected (blocked by permission)
+			return
+		}
+	}
+	t.Error("expected tool result with rejection message")
+}
