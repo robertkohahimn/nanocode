@@ -37,14 +37,11 @@ func parseSelection(input string, count int) ([]bool, error) {
 	parts := strings.Fields(input)
 
 	for _, part := range parts {
-		// Check for range (e.g., "1-3")
-		if strings.Contains(part, "-") {
-			rangeParts := strings.SplitN(part, "-", 2)
-			if len(rangeParts) != 2 {
-				return nil, fmt.Errorf("invalid range: %q", part)
-			}
-			start, err1 := strconv.Atoi(rangeParts[0])
-			end, err2 := strconv.Atoi(rangeParts[1])
+		// Check for range (e.g., "1-3") - must have exactly one '-' between two positive numbers
+		if idx := strings.Index(part, "-"); idx > 0 && idx < len(part)-1 {
+			// Split at first '-' only if it's not at start or end
+			start, err1 := strconv.Atoi(part[:idx])
+			end, err2 := strconv.Atoi(part[idx+1:])
 			if err1 != nil || err2 != nil {
 				return nil, fmt.Errorf("invalid range: %q", part)
 			}
@@ -156,26 +153,17 @@ func collectBashConfirmations(
 			continue
 		}
 
-		// Check if command needs confirmation using permission checker
-		// If permChecker is nil, all commands need confirmation
-		needsConfirm := true
+		// Check permission - skip blocked commands (they'll fail at execution)
 		if permChecker != nil {
-			// If Check returns nil, command is auto-approved (allowed by rules)
-			// But we still need to ask for confirmation in batch mode
-			// The permission checker just blocks denied commands
 			if err := permChecker.Check(in.Command); err != nil {
-				// Command is blocked by permission rules - skip it
-				// It will fail when executed
 				continue
 			}
 		}
 
-		if needsConfirm {
-			pending = append(pending, pendingCommand{
-				toolCallID: tc.ID,
-				command:    in.Command,
-			})
-		}
+		pending = append(pending, pendingCommand{
+			toolCallID: tc.ID,
+			command:    in.Command,
+		})
 	}
 
 	// If 0-1 commands need confirmation, let normal flow handle it

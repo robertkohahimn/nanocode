@@ -128,6 +128,9 @@ func TestParseSelection_Invalid(t *testing.T) {
 		{"4", 3},      // out of range
 		{"1-5", 3},    // range exceeds count
 		{"3-1", 3},    // inverted range
+		{"-1", 3},     // negative number (not a valid range)
+		{"1--3", 3},   // double dash
+		{"-", 3},      // just a dash
 	}
 
 	for _, tt := range tests {
