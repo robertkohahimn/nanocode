@@ -38,18 +38,21 @@ Be precise. Make minimal changes. Explain your reasoning.`
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider   provider.Provider
-	tools      *ToolRegistry
-	store      store.Store
-	config     *config.Config
-	mcpClients []io.Closer          // MCP subprocess handles
-	snapMgr    *snapshot.Manager     // nil if no project dir
+	provider    provider.Provider
+	tools       *ToolRegistry
+	store       store.Store
+	config      *config.Config
+	mcpClients  []io.Closer           // MCP subprocess handles
+	snapMgr     *snapshot.Manager     // nil if no project dir
+	stdinReader *bufio.Reader         // shared stdin reader for confirmations
+	permChecker *permission.Checker   // bash command permission checker (may be nil)
 }
 
 // New creates an Engine with the given dependencies.
 // stdinReader is shared with the REPL loop to avoid conflicting buffered readers.
 func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bufio.Reader, autoConfirm bool) *Engine {
 	bashTool := tool.NewBashTool(stdinReader)
+	bashTool.SetToolCallIDGetter(ToolCallIDFromContext)
 
 	// Auto-confirm mode: skip interactive prompts
 	if autoConfirm {
@@ -59,12 +62,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	// Permission system: wire allow/deny lists into bash confirm hook
+	var permChecker *permission.Checker
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
 		if len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 {
-			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
+			permChecker = permission.NewChecker(bashCfg.Allow, bashCfg.Deny)
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
-				if err := checker.Check(cmd); err != nil {
+				if err := permChecker.Check(cmd); err != nil {
 					fmt.Fprintf(os.Stderr, "\033[31mBlocked:\033[0m %s\n", err)
 					return false
 				}
@@ -149,11 +153,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	eng := &Engine{
-		provider:   p,
-		store:      s,
-		config:     cfg,
-		mcpClients: mcpClients,
-		snapMgr:    snapMgr,
+		provider:    p,
+		store:       s,
+		config:      cfg,
+		mcpClients:  mcpClients,
+		snapMgr:     snapMgr,
+		stdinReader: stdinReader,
+		permChecker: permChecker,
 	}
 
 	subagentTool := &tool.SubagentTool{Runner: eng}
@@ -351,6 +357,17 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			return nil
 		}
 
+		// Batch confirmation for multiple bash commands
+		var bashToolForClear *tool.BashTool
+		if bashT, ok := e.tools.Get("bash"); ok {
+			if bt, ok := bashT.(*tool.BashTool); ok {
+				if err := collectBashConfirmations(toolCalls, bt, e.permChecker, e.stdinReader, os.Stderr); err != nil {
+					return fmt.Errorf("batch confirmation: %w", err)
+				}
+				bashToolForClear = bt
+			}
+		}
+
 		// Execute tools with doom loop detection
 		var resultBlocks []provider.ContentBlock
 		for _, tc := range toolCalls {
@@ -394,6 +411,11 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				Type:       "tool_result",
 				ToolResult: result,
 			})
+		}
+
+		// Clear batch overrides after tool execution
+		if bashToolForClear != nil {
+			bashToolForClear.ClearConfirmOverrides()
 		}
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}

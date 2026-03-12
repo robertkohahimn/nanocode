@@ -9,6 +9,17 @@ import (
 	"github.com/robertkohahimn/nanocode/internal/tool"
 )
 
+// toolCallIDKey is the context key for the tool call ID.
+type toolCallIDKey struct{}
+
+// ToolCallIDFromContext retrieves the tool call ID from context.
+func ToolCallIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(toolCallIDKey{}).(string); ok {
+		return id
+	}
+	return ""
+}
+
 // ToolRegistry manages the set of available tools.
 type ToolRegistry struct {
 	tools map[string]tool.Tool
@@ -63,6 +74,9 @@ func (r *ToolRegistry) Execute(ctx context.Context, tc *provider.ToolCall) *prov
 			IsError:    true,
 		}
 	}
+
+	// Pass tool call ID through context
+	ctx = context.WithValue(ctx, toolCallIDKey{}, tc.ID)
 
 	result, err := t.Execute(ctx, tc.Input)
 	if err != nil {
