@@ -1,0 +1,4 @@
+{
+  "category": "debugging",
+  "expected_tools": ["read", "edit"]
+}

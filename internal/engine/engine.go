@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
@@ -23,6 +24,13 @@ import (
 const maxIterations = 50
 const maxContextMessages = 40
 
+// ToolRecord captures a single tool invocation during an engine run.
+type ToolRecord struct {
+	Name       string
+	DurationMs int64
+	IsError    bool
+}
+
 const errorReflectionPrompt = `<error-reflection>
 The previous tool call failed. Before your next action:
 1. What specific error occurred?
@@ -34,12 +42,14 @@ Do NOT retry the exact same command. If you are stuck after 2 failed attempts at
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider    provider.Provider
-	tools       *ToolRegistry
-	store       store.Store
-	config      *config.Config
-	mcpClients  []io.Closer           // MCP subprocess handles
-	snapMgr     *snapshot.Manager     // nil if no project dir
+	provider       provider.Provider
+	tools          *ToolRegistry
+	store          store.Store
+	config         *config.Config
+	mcpClients     []io.Closer       // MCP subprocess handles
+	snapMgr        *snapshot.Manager  // nil if no project dir
+	mu             sync.Mutex        // protects lastRunRecords
+	lastRunRecords []ToolRecord
 }
 
 // New creates an Engine with the given dependencies.
@@ -80,7 +90,7 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	baseDir := cfg.ProjectDir
 	var snapMgr *snapshot.Manager
 	var onChange func(string)
-	if baseDir != "" {
+	if baseDir != "" && !cfg.DisableSnapshot {
 		snapMgr = snapshot.New(baseDir, s)
 		onChange = snapMgr.Track
 	}
@@ -172,6 +182,15 @@ func (e *Engine) Close() {
 	for _, c := range e.mcpClients {
 		c.Close()
 	}
+}
+
+// ConsumeToolRecords returns and clears the tool records from the last run.
+func (e *Engine) ConsumeToolRecords() []ToolRecord {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	records := e.lastRunRecords
+	e.lastRunRecords = nil
+	return records
 }
 
 // persistMessage marshals content and appends it to the store.
@@ -276,6 +295,10 @@ func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, on
 
 // loop is the core agentic loop.
 func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider.Message, cfg *config.Config, onEvent func(provider.Event)) error {
+	e.mu.Lock()
+	e.lastRunRecords = nil
+	e.mu.Unlock()
+
 	system := cfg.System
 	if system == "" {
 		system = DefaultSystemPrompt()
@@ -302,7 +325,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	loopStart := time.Now()
 	var iterations int
 	defer func() {
-		logger.LogSessionEnd(iterations, time.Since(loopStart))
+		logger.LogSessionEnd(iterations+1, time.Since(loopStart))
 	}()
 
 	// Track per-file edits to detect doom loops (same file edited repeatedly).
@@ -410,7 +433,15 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 
 			toolStart := time.Now()
 			result := e.tools.Execute(ctx, tc)
-			logger.LogToolCall(tc.Name, time.Since(toolStart), result.IsError)
+			elapsed := time.Since(toolStart)
+			logger.LogToolCall(tc.Name, elapsed, result.IsError)
+			e.mu.Lock()
+			e.lastRunRecords = append(e.lastRunRecords, ToolRecord{
+				Name:       tc.Name,
+				DurationMs: elapsed.Milliseconds(),
+				IsError:    result.IsError,
+			})
+			e.mu.Unlock()
 			resultBlocks = append(resultBlocks, provider.ContentBlock{
 				Type:       "tool_result",
 				ToolResult: result,

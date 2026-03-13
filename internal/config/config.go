@@ -24,6 +24,7 @@ type Config struct {
 	StrictMode        bool      `json:"-"`                  // CLI-only, disables auto-approval
 	DisableReflection bool      `json:"disableReflection"`  // skip error reflection prompts
 	LogWriter         io.Writer `json:"-"`                  // structured log output (nil = no logging)
+	DisableSnapshot   bool      `json:"-"`                  // internal-only, not serialized
 }
 
 type ToolConfig struct {

@@ -9,7 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+)
+
+const (
+	maxRetries     = 3
+	initialBackoff = 5 * time.Second
 )
 
 // DurationMs is milliseconds stored as int64 so the JSON tag "duration_ms"
@@ -98,11 +104,28 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 	}
 
 	start := time.Now()
-	records, err := eng.Run(ctx, task.Prompt)
+	var records []ToolCallRecord
+	var runErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				result.Error = fmt.Sprintf("context cancelled during retry backoff: %v", ctx.Err())
+				result.DurationMs = time.Since(start).Milliseconds()
+				return result
+			}
+		}
+		records, runErr = eng.Run(ctx, task.Prompt)
+		if runErr == nil || !strings.Contains(runErr.Error(), "429") {
+			break
+		}
+	}
 	result.DurationMs = time.Since(start).Milliseconds()
 
-	if err != nil {
-		result.Error = fmt.Sprintf("engine run failed: %v", err)
+	if runErr != nil {
+		result.Error = fmt.Sprintf("engine run failed: %v", runErr)
 		return result
 	}
 

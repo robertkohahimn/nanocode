@@ -13,7 +13,7 @@ func TestLogIteration(t *testing.T) {
 	l := NewEngineLogger("sess-1", &buf)
 	l.LogIteration(3, 2)
 
-	var entry logEntry
+	var entry iterationEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v\noutput: %s", err, buf.String())
 	}
@@ -45,7 +45,7 @@ func TestLogToolCall(t *testing.T) {
 		t.Errorf("expected is_error:false in output, got: %s", raw)
 	}
 
-	var entry logEntry
+	var entry toolCallEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestLogToolCallError(t *testing.T) {
 	l := NewEngineLogger("sess-err", &buf)
 	l.LogToolCall("bash", 100*time.Millisecond, true)
 
-	var entry logEntry
+	var entry toolCallEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -77,12 +77,32 @@ func TestLogToolCallError(t *testing.T) {
 	}
 }
 
+func TestLogToolCallZeroDuration(t *testing.T) {
+	var buf bytes.Buffer
+	l := NewEngineLogger("sess-zero", &buf)
+	l.LogToolCall("fast_tool", 0, false)
+
+	raw := buf.String()
+	// duration_ms:0 must appear in the JSON output (no omitempty)
+	if !strings.Contains(raw, `"duration_ms":0`) {
+		t.Errorf("expected duration_ms:0 in output, got: %s", raw)
+	}
+
+	var entry toolCallEntry
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if entry.DurationMs != 0 {
+		t.Errorf("duration_ms = %d, want 0", entry.DurationMs)
+	}
+}
+
 func TestLogDoomLoop(t *testing.T) {
 	var buf bytes.Buffer
 	l := NewEngineLogger("sess-3", &buf)
 	l.LogDoomLoop("/path/to/file.go", 6)
 
-	var entry logEntry
+	var entry doomLoopEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -102,7 +122,7 @@ func TestLogContextWindow(t *testing.T) {
 	l := NewEngineLogger("sess-4", &buf)
 	l.LogContextWindow(60, 40)
 
-	var entry logEntry
+	var entry contextWindowEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -122,7 +142,7 @@ func TestLogSessionEnd(t *testing.T) {
 	l := NewEngineLogger("sess-5", &buf)
 	l.LogSessionEnd(10, 5*time.Second)
 
-	var entry logEntry
+	var entry sessionEndEntry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -149,8 +169,8 @@ func TestLogNilWriter(t *testing.T) {
 
 func TestLogNilLogger(t *testing.T) {
 	var l *EngineLogger
-	// A nil logger should not panic
-	l.emit(logEntry{Type: "test"})
+	// A nil logger should not panic when calling public methods
+	l.LogIteration(1, 0)
 }
 
 func TestLogMultipleEntries(t *testing.T) {

@@ -175,7 +175,23 @@ func run() error {
 func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string, autoConfirm bool, logPath string) {
 	var parts []string
 	for i := 0; i < len(args); i++ {
-		switch args[i] {
+		arg := args[i]
+
+		// Support --flag=value syntax by splitting on first =
+		if strings.HasPrefix(arg, "--") && strings.Contains(arg, "=") {
+			eqIdx := strings.Index(arg, "=")
+			flag := arg[:eqIdx]
+			val := arg[eqIdx+1:]
+			// Expand in-place: replace current arg with flag, insert value after
+			expanded := make([]string, 0, len(args)+1)
+			expanded = append(expanded, args[:i]...)
+			expanded = append(expanded, flag, val)
+			expanded = append(expanded, args[i+1:]...)
+			args = expanded
+			arg = args[i]
+		}
+
+		switch arg {
 		case "--session":
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
@@ -272,6 +288,7 @@ func runBenchmark(ctx context.Context, args []string) error {
 	factory := func(workDir string) (benchmark.EngineRunner, error) {
 		workCfg := *cfg
 		workCfg.ProjectDir = workDir
+		workCfg.DisableSnapshot = true
 		eng := engine.New(prov, st, &workCfg, bufio.NewReader(strings.NewReader("")), true)
 		adapter := &benchmarkEngineAdapter{eng: eng, store: st, projectDir: workDir}
 		return adapter, nil
@@ -292,16 +309,19 @@ func (a *benchmarkEngineAdapter) Run(ctx context.Context, prompt string) ([]benc
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
-	start := time.Now()
 	if err := a.eng.Run(ctx, sessionID, prompt, func(_ provider.Event) {}); err != nil {
 		return nil, err
 	}
-	elapsed := time.Since(start)
-	// We return a single aggregate record since the engine doesn't expose
-	// individual tool call records yet.
-	return []benchmark.ToolCallRecord{
-		{Name: "engine-run", DurationMs: elapsed.Milliseconds()},
-	}, nil
+	engineRecords := a.eng.ConsumeToolRecords()
+	records := make([]benchmark.ToolCallRecord, len(engineRecords))
+	for i, r := range engineRecords {
+		records[i] = benchmark.ToolCallRecord{
+			Name:       r.Name,
+			DurationMs: r.DurationMs,
+			IsError:    r.IsError,
+		}
+	}
+	return records, nil
 }
 
 func (a *benchmarkEngineAdapter) Close() error {
