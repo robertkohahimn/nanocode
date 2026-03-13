@@ -1,0 +1,1 @@
+Read the file log.txt and append the line 'Entry 4' to the end

@@ -128,6 +128,27 @@ func TestProjectDirPreservedAfterMerge(t *testing.T) {
 	}
 }
 
+func TestMergeDisableReflection(t *testing.T) {
+	base := DefaultConfig()
+	if base.DisableReflection {
+		t.Fatal("default DisableReflection should be false")
+	}
+
+	overlay := &Config{DisableReflection: true}
+	result := merge(base, overlay)
+	if !result.DisableReflection {
+		t.Error("expected DisableReflection=true after merge with overlay that sets it")
+	}
+
+	// Verify false overlay does not override true base
+	base2 := &Config{DisableReflection: true}
+	overlay2 := &Config{}
+	result2 := merge(base2, overlay2)
+	if !result2.DisableReflection {
+		t.Error("expected DisableReflection=true to be preserved when overlay is false")
+	}
+}
+
 func TestLoadAutoApprove(t *testing.T) {
 	dir := t.TempDir()
 	configJSON := `{

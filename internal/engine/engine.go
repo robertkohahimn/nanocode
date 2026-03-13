@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/config"
@@ -24,16 +23,14 @@ import (
 const maxIterations = 50
 const maxContextMessages = 40
 
-const defaultSystem = `You are Nanocode, a coding assistant. You have access to tools for reading, writing, and editing files, running shell commands, searching codebases, and delegating sub-tasks.
+const errorReflectionPrompt = `<error-reflection>
+The previous tool call failed. Before your next action:
+1. What specific error occurred?
+2. What assumption was incorrect?
+3. What will you do differently this time?
 
-When the user gives you a task:
-1. Read relevant files to understand the codebase.
-2. Plan your approach.
-3. Make changes using the edit and write tools.
-4. Verify your changes work by running tests or the build.
-5. Report what you did.
-
-Be precise. Make minimal changes. Explain your reasoning.`
+Do NOT retry the exact same command. If you are stuck after 2 failed attempts at the same approach, ask the user for help.
+</error-reflection>`
 
 // Engine is the core conversation loop.
 type Engine struct {
@@ -43,8 +40,6 @@ type Engine struct {
 	config      *config.Config
 	mcpClients  []io.Closer           // MCP subprocess handles
 	snapMgr     *snapshot.Manager     // nil if no project dir
-	stdinReader *bufio.Reader         // shared stdin reader for confirmations
-	permChecker *permission.Checker   // bash command permission checker (may be nil)
 }
 
 // New creates an Engine with the given dependencies.
@@ -90,12 +85,13 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		onChange = snapMgr.Track
 	}
 
-	writeTool := &tool.WriteTool{BaseDir: baseDir, OnChange: onChange}
-	editTool := &tool.EditTool{BaseDir: baseDir, OnChange: onChange}
+	fileTracker := tool.NewFileTracker()
+	writeTool := &tool.WriteTool{BaseDir: baseDir, OnChange: onChange, Tracker: fileTracker}
+	editTool := &tool.EditTool{BaseDir: baseDir, OnChange: onChange, Tracker: fileTracker}
 
 	// Collect built-in tools
 	allTools := []tool.Tool{
-		&tool.ReadTool{BaseDir: baseDir},
+		&tool.ReadTool{BaseDir: baseDir, Tracker: fileTracker},
 		writeTool, editTool,
 		&tool.GlobTool{},
 		&tool.GrepTool{BaseDir: baseDir},
@@ -201,11 +197,21 @@ func (e *Engine) persistMessage(ctx context.Context, sessionID string, role prov
 func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onEvent func(provider.Event)) error {
 	subCfg := *e.config
 	subCfg.System = systemPrompt
-	// Deep copy the Tools map to prevent mutation of parent config
+	// Deep copy the Tools map and slice fields to prevent mutation of parent config
 	if e.config.Tools != nil {
 		subCfg.Tools = make(map[string]config.ToolConfig, len(e.config.Tools))
 		for k, v := range e.config.Tools {
-			subCfg.Tools[k] = v
+			tc := config.ToolConfig{}
+			if len(v.Allow) > 0 {
+				tc.Allow = append([]string(nil), v.Allow...)
+			}
+			if len(v.Deny) > 0 {
+				tc.Deny = append([]string(nil), v.Deny...)
+			}
+			if len(v.AutoApprove) > 0 {
+				tc.AutoApprove = append([]string(nil), v.AutoApprove...)
+			}
+			subCfg.Tools[k] = tc
 		}
 	}
 
@@ -272,7 +278,7 @@ func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, on
 func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider.Message, cfg *config.Config, onEvent func(provider.Event)) error {
 	system := cfg.System
 	if system == "" {
-		system = defaultSystem
+		system = DefaultSystemPrompt()
 	}
 
 	// Auto-read project context file (nanocode.md) if it exists (bounded to 1MB).
@@ -291,16 +297,27 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		}
 	}
 
+	// Structured logging for engine decisions
+	logger := NewEngineLogger(sessionID, cfg.LogWriter)
+	loopStart := time.Now()
+	var iterations int
+	defer func() {
+		logger.LogSessionEnd(iterations, time.Since(loopStart))
+	}()
+
 	// Track per-file edits to detect doom loops (same file edited repeatedly).
 	fileEditCounts := make(map[string]int)
 	const maxFileEdits = 5
 
-	for i := 0; i < maxIterations; i++ {
+	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
 		windowed := windowMessages(messages, maxContextMessages)
+		if len(windowed) < len(messages) {
+			logger.LogContextWindow(len(messages), len(windowed))
+		}
 
 		req := &provider.Request{
 			Model:     cfg.Model,
@@ -312,12 +329,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 
 		events, err := e.provider.Stream(ctx, req)
 		if err != nil {
-			return fmt.Errorf("provider stream (iteration %d): %w", i+1, err)
+			return fmt.Errorf("provider stream (iteration %d): %w", iterations+1, err)
 		}
 
 		assistantMsg, err := collectResponse(events, onEvent)
 		if err != nil {
-			return fmt.Errorf("collecting response (iteration %d): %w", i+1, err)
+			return fmt.Errorf("collecting response (iteration %d): %w", iterations+1, err)
 		}
 
 		// Persist assistant message
@@ -330,6 +347,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				toolCalls = append(toolCalls, cb.ToolCall)
 			}
 		}
+
+		logger.LogIteration(iterations+1, len(toolCalls))
 
 		// If no tool calls, we are done
 		if len(toolCalls) == 0 {
@@ -344,6 +363,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					FilePath string `json:"file_path"`
 				}
 				if err := json.Unmarshal(tc.Input, &inp); err != nil {
+					logger.LogToolCall(tc.Name, 0, true)
 					resultBlocks = append(resultBlocks, provider.ContentBlock{
 						Type: "tool_result",
 						ToolResult: &provider.ToolResult{
@@ -352,6 +372,12 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 							IsError:    true,
 						},
 					})
+					if !cfg.DisableReflection {
+						resultBlocks = append(resultBlocks, provider.ContentBlock{
+							Type: "text",
+							Text: errorReflectionPrompt,
+						})
+					}
 					continue
 				}
 				if inp.FilePath != "" {
@@ -361,6 +387,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					}
 					fileEditCounts[key]++
 					if fileEditCounts[key] > maxFileEdits {
+						logger.LogToolCall(tc.Name, 0, true)
+						logger.LogDoomLoop(key, fileEditCounts[key])
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
 							ToolResult: &provider.ToolResult{
@@ -369,16 +397,30 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 								IsError:    true,
 							},
 						})
+						if !cfg.DisableReflection {
+							resultBlocks = append(resultBlocks, provider.ContentBlock{
+								Type: "text",
+								Text: errorReflectionPrompt,
+							})
+						}
 						continue
 					}
 				}
 			}
 
+			toolStart := time.Now()
 			result := e.tools.Execute(ctx, tc)
+			logger.LogToolCall(tc.Name, time.Since(toolStart), result.IsError)
 			resultBlocks = append(resultBlocks, provider.ContentBlock{
 				Type:       "tool_result",
 				ToolResult: result,
 			})
+			if result.IsError && !cfg.DisableReflection {
+				resultBlocks = append(resultBlocks, provider.ContentBlock{
+					Type: "text",
+					Text: errorReflectionPrompt,
+				})
+			}
 		}
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}
@@ -390,76 +432,4 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	}
 
 	return fmt.Errorf("maximum iterations (%d) reached", maxIterations)
-}
-
-// windowMessages prevents context overflow by keeping the first message
-// (original user prompt) and the last maxN messages. It adjusts the cut
-// point to avoid splitting tool_use/tool_result pairs, which would cause
-// API errors from both Anthropic and OpenAI.
-func windowMessages(msgs []provider.Message, maxN int) []provider.Message {
-	if len(msgs) <= maxN {
-		return msgs
-	}
-	// Start index for the tail (after reserving slot 0 for the first message)
-	startIdx := len(msgs) - (maxN - 1)
-
-	// If we'd start on a tool_result message, back up to include
-	// the preceding assistant message that contains the tool_use.
-	if startIdx > 1 {
-		msg := msgs[startIdx]
-		hasToolResult := false
-		for _, cb := range msg.Content {
-			if cb.Type == "tool_result" {
-				hasToolResult = true
-				break
-			}
-		}
-		if hasToolResult {
-			startIdx--
-		}
-	}
-
-	result := make([]provider.Message, 0, 1+len(msgs)-startIdx)
-	result = append(result, msgs[0])
-	result = append(result, msgs[startIdx:]...)
-	return result
-}
-
-// collectResponse drains the event channel and builds the assistant message.
-func collectResponse(events <-chan provider.Event, onEvent func(provider.Event)) (*provider.Message, error) {
-	var textBuilder strings.Builder
-	var toolCalls []*provider.ToolCall
-
-	for ev := range events {
-		if onEvent != nil {
-			onEvent(ev)
-		}
-
-		switch ev.Type {
-		case provider.EventTextDelta:
-			textBuilder.WriteString(ev.Text)
-		case provider.EventToolCallEnd:
-			if ev.ToolCall != nil {
-				toolCalls = append(toolCalls, ev.ToolCall)
-			}
-		case provider.EventError:
-			return nil, ev.Error
-		}
-	}
-
-	msg := &provider.Message{Role: provider.RoleAssistant}
-	if textBuilder.Len() > 0 {
-		msg.Content = append(msg.Content, provider.ContentBlock{
-			Type: "text",
-			Text: textBuilder.String(),
-		})
-	}
-	for _, tc := range toolCalls {
-		msg.Content = append(msg.Content, provider.ContentBlock{
-			Type:     "tool_use",
-			ToolCall: tc,
-		})
-	}
-
-	return msg, nil
 }

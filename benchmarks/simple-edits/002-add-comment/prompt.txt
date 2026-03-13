@@ -1,0 +1,1 @@
+Add a comment above the main function in main.go explaining what it does
