@@ -42,14 +42,15 @@ Do NOT retry the exact same command. If you are stuck after 2 failed attempts at
 
 // Engine is the core conversation loop.
 type Engine struct {
-	provider       provider.Provider
-	tools          *ToolRegistry
-	store          store.Store
-	config         *config.Config
-	mcpClients     []io.Closer       // MCP subprocess handles
-	snapMgr        *snapshot.Manager  // nil if no project dir
-	mu             sync.Mutex        // protects lastRunRecords
-	lastRunRecords []ToolRecord
+	provider         provider.Provider
+	tools            *ToolRegistry
+	store            store.Store
+	config           *config.Config
+	mcpClients       []io.Closer       // MCP subprocess handles
+	snapMgr          *snapshot.Manager  // nil if no project dir
+	mu               sync.Mutex        // protects lastRunRecords
+	lastRunRecords   []ToolRecord
+	currentSessionID string // set per Run/Resume for task tools
 }
 
 // New creates an Engine with the given dependencies.
@@ -170,6 +171,14 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		snapMgr:    snapMgr,
 	}
 
+	getSessionID := func() string { return eng.currentSessionID }
+	allTools = append(allTools,
+		&tool.TaskCreateTool{Store: s, GetSessionID: getSessionID},
+		&tool.TaskUpdateTool{Store: s, GetSessionID: getSessionID},
+		&tool.TaskListTool{Store: s, GetSessionID: getSessionID},
+		&tool.TaskGetTool{Store: s, GetSessionID: getSessionID},
+	)
+
 	subagentTool := &tool.SubagentTool{Runner: eng}
 	allTools = append(allTools, subagentTool)
 	eng.tools = NewToolRegistry(allTools...)
@@ -245,6 +254,7 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 
 // Run starts a conversation from the user's initial prompt.
 func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.currentSessionID = sessionID
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}
@@ -263,6 +273,7 @@ func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEve
 
 // Resume continues an existing session with a new user message.
 func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.currentSessionID = sessionID
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}

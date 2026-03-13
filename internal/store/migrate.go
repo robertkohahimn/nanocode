@@ -50,6 +50,24 @@ var migrations = []string{
 	DROP TABLE messages;
 	ALTER TABLE messages_new RENAME TO messages;
 	CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);`,
+
+	// Version 4: task tracking
+	`CREATE TABLE IF NOT EXISTS tasks (
+		id          TEXT PRIMARY KEY,
+		session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		subject     TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		status      TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed')),
+		created_at  INTEGER NOT NULL,
+		updated_at  INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id);
+
+	CREATE TABLE IF NOT EXISTS task_deps (
+		task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		blocked_by TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		PRIMARY KEY (task_id, blocked_by)
+	);`,
 }
 
 // Migrate ensures the database schema is up to date.

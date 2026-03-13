@@ -51,6 +51,16 @@ You operate in the user's project directory and respect its boundaries.
 - Set reasonable timeouts for long-running commands.
 - When running tests, capture both stdout and stderr to diagnose failures.
 
+## Task Tracking
+
+- For complex multi-step tasks (3+ steps), create a task list before starting work.
+- Use `task_create` to add tasks with clear, actionable subjects.
+- Use `task_update` to mark tasks as in_progress when starting and completed when done.
+- Use `task_list` to review progress and find the next task to work on.
+- Use `task_get` to review full task details before starting work on a task.
+- Keep task descriptions specific enough that you could resume the work in a new context.
+- Update task status as you work — this helps track progress on complex tasks.
+
 ## Subagent
 
 - Use the `subagent` tool for complex multi-step subtasks that benefit from a separate context.

@@ -22,6 +22,12 @@ type Store interface {
 	UpdateSessionTitle(ctx context.Context, id, title string) error
 	CreateSnapshot(ctx context.Context, snap *SnapshotRecord) error
 	ListSnapshots(ctx context.Context, sessionID string) ([]SnapshotRecord, error)
+	CreateTask(ctx context.Context, sessionID, subject, description string) (string, error)
+	UpdateTask(ctx context.Context, id string, updates TaskUpdate) error
+	GetTask(ctx context.Context, id string) (*Task, error)
+	ListTasks(ctx context.Context, sessionID string) ([]Task, error)
+	DeleteTask(ctx context.Context, id string) error
+	AddTaskDep(ctx context.Context, taskID, blockedBy string) error
 	Close() error
 }
 
