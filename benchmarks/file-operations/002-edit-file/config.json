@@ -1,0 +1,4 @@
+{
+  "category": "file-operations",
+  "expected_tools": ["read", "edit"]
+}

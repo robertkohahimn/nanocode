@@ -3,6 +3,7 @@ package benchmark
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,54 @@ func TestLoadSuite(t *testing.T) {
 	// Category defaults to suite name
 	if suite.Tasks[0].Category != suite.Name {
 		t.Errorf("category = %q, want %q", suite.Tasks[0].Category, suite.Name)
+	}
+}
+
+type mockRetryEngine struct {
+	attempts  *int
+	failUntil int
+}
+
+func (m *mockRetryEngine) Run(_ context.Context, _ string) ([]ToolCallRecord, error) {
+	*m.attempts++
+	if *m.attempts <= m.failUntil {
+		return nil, fmt.Errorf("anthropic API error 429: rate limit exceeded")
+	}
+	return []ToolCallRecord{{Name: "read", DurationMs: 10}}, nil
+}
+
+func TestRunTaskRetries429(t *testing.T) {
+	attempts := 0
+	runner := &Runner{
+		EngineFactory: func(_ string) (EngineRunner, error) {
+			return &mockRetryEngine{attempts: &attempts, failUntil: 2}, nil
+		},
+	}
+	task := Task{ID: "retry-test", Prompt: "test", VerifyScript: "exit 0"}
+	result := runner.RunTask(context.Background(), task)
+	if !result.Passed {
+		t.Errorf("expected passed after retries, got error: %s", result.Error)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestRunTaskNoRetryOnOtherErrors(t *testing.T) {
+	attempts := 0
+	runner := &Runner{
+		EngineFactory: func(_ string) (EngineRunner, error) {
+			return &mockRetryEngine{attempts: &attempts, failUntil: 100}, nil
+		},
+	}
+	// Use an engine that returns a non-429 error
+	runner.EngineFactory = func(_ string) (EngineRunner, error) {
+		return &mockEngine{err: fmt.Errorf("some other error")}, nil
+	}
+	task := Task{ID: "no-retry-test", Prompt: "test", VerifyScript: "exit 0"}
+	result := runner.RunTask(context.Background(), task)
+	if result.Passed {
+		t.Error("expected failure")
 	}
 }
 
@@ -264,6 +313,24 @@ func TestResultJSON(t *testing.T) {
 	}
 	if len(decoded.ToolCalls) != 2 {
 		t.Errorf("tool_calls len = %d, want 2", len(decoded.ToolCalls))
+	}
+}
+
+func TestParseCLIArgsHelp(t *testing.T) {
+	_, err := ParseCLIArgs([]string{"--help"})
+	if err == nil {
+		t.Fatal("expected error for --help")
+	}
+	if !strings.Contains(err.Error(), "usage:") {
+		t.Errorf("expected usage message, got: %v", err)
+	}
+
+	_, err = ParseCLIArgs([]string{"-h"})
+	if err == nil {
+		t.Fatal("expected error for -h")
+	}
+	if !strings.Contains(err.Error(), "usage:") {
+		t.Errorf("expected usage message, got: %v", err)
 	}
 }
 

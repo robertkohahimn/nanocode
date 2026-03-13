@@ -18,33 +18,63 @@ func NewEngineLogger(sessionID string, w io.Writer) *EngineLogger {
 	return &EngineLogger{SessionID: sessionID, w: w}
 }
 
-// logEntry is the common structure for all log entries.
-// Fields with meaningful zero values (int, bool) omit omitempty so that
-// values like iteration=0, is_error=false, etc. are always present.
-// String fields that are legitimately optional keep omitempty.
-type logEntry struct {
-	Type             string `json:"type"`
-	SessionID        string `json:"session_id"`
-	Timestamp        int64  `json:"timestamp"`
-	Iteration        int    `json:"iteration"`
-	ToolCalls        int    `json:"tool_calls"`
-	ToolName         string `json:"tool,omitempty"`
-	DurationMs       int64  `json:"duration_ms,omitempty"`
-	IsError          bool   `json:"is_error"`
-	File             string `json:"file,omitempty"`
-	EditCount        int    `json:"edit_count"`
-	TotalMessages    int    `json:"total_messages"`
-	WindowedMessages int    `json:"windowed_messages"`
-	Iterations       int    `json:"iterations"`
-	TotalDurationMs  int64  `json:"total_duration_ms,omitempty"`
+// baseEntry contains fields common to all log entry types.
+type baseEntry struct {
+	Type      string `json:"type"`
+	SessionID string `json:"session_id"`
+	Timestamp int64  `json:"timestamp"`
 }
 
-func (l *EngineLogger) emit(entry logEntry) {
+// iterationEntry records the start of an engine loop iteration.
+type iterationEntry struct {
+	baseEntry
+	Iteration int `json:"iteration"`
+	ToolCalls int `json:"tool_calls"`
+}
+
+// toolCallEntry records a tool invocation with timing.
+type toolCallEntry struct {
+	baseEntry
+	ToolName   string `json:"tool"`
+	DurationMs int64  `json:"duration_ms"`
+	IsError    bool   `json:"is_error"`
+}
+
+// doomLoopEntry records doom loop detection.
+type doomLoopEntry struct {
+	baseEntry
+	File      string `json:"file"`
+	EditCount int    `json:"edit_count"`
+}
+
+// contextWindowEntry records context windowing decisions.
+type contextWindowEntry struct {
+	baseEntry
+	TotalMessages    int `json:"total_messages"`
+	WindowedMessages int `json:"windowed_messages"`
+}
+
+// sessionEndEntry records final session stats.
+type sessionEndEntry struct {
+	baseEntry
+	Iterations      int   `json:"iterations"`
+	TotalDurationMs int64 `json:"total_duration_ms"`
+}
+
+// base returns a baseEntry populated with the entry type, session ID, and current timestamp.
+func (l *EngineLogger) base(entryType string) baseEntry {
+	return baseEntry{
+		Type:      entryType,
+		SessionID: l.SessionID,
+		Timestamp: time.Now().UnixMilli(),
+	}
+}
+
+// emit marshals the entry to JSON and writes it as a single line.
+func (l *EngineLogger) emit(entry any) {
 	if l == nil || l.w == nil {
 		return
 	}
-	entry.SessionID = l.SessionID
-	entry.Timestamp = time.Now().UnixMilli()
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
@@ -56,8 +86,11 @@ func (l *EngineLogger) emit(entry logEntry) {
 
 // LogIteration records the start of an engine loop iteration.
 func (l *EngineLogger) LogIteration(iter int, toolCallCount int) {
-	l.emit(logEntry{
-		Type:      "iteration",
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(iterationEntry{
+		baseEntry: l.base("iteration"),
 		Iteration: iter,
 		ToolCalls: toolCallCount,
 	})
@@ -65,8 +98,11 @@ func (l *EngineLogger) LogIteration(iter int, toolCallCount int) {
 
 // LogToolCall records a tool invocation with timing.
 func (l *EngineLogger) LogToolCall(toolName string, duration time.Duration, isError bool) {
-	l.emit(logEntry{
-		Type:       "tool_call",
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(toolCallEntry{
+		baseEntry:  l.base("tool_call"),
 		ToolName:   toolName,
 		DurationMs: duration.Milliseconds(),
 		IsError:    isError,
@@ -75,8 +111,11 @@ func (l *EngineLogger) LogToolCall(toolName string, duration time.Duration, isEr
 
 // LogDoomLoop records doom loop detection.
 func (l *EngineLogger) LogDoomLoop(file string, editCount int) {
-	l.emit(logEntry{
-		Type:      "doom_loop",
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(doomLoopEntry{
+		baseEntry: l.base("doom_loop"),
 		File:      file,
 		EditCount: editCount,
 	})
@@ -84,8 +123,11 @@ func (l *EngineLogger) LogDoomLoop(file string, editCount int) {
 
 // LogContextWindow records context windowing decisions.
 func (l *EngineLogger) LogContextWindow(totalMessages, windowedMessages int) {
-	l.emit(logEntry{
-		Type:             "context_window",
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(contextWindowEntry{
+		baseEntry:        l.base("context_window"),
 		TotalMessages:    totalMessages,
 		WindowedMessages: windowedMessages,
 	})
@@ -93,8 +135,11 @@ func (l *EngineLogger) LogContextWindow(totalMessages, windowedMessages int) {
 
 // LogSessionEnd records final session stats.
 func (l *EngineLogger) LogSessionEnd(iterations int, totalDuration time.Duration) {
-	l.emit(logEntry{
-		Type:            "session_end",
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(sessionEndEntry{
+		baseEntry:       l.base("session_end"),
 		Iterations:      iterations,
 		TotalDurationMs: totalDuration.Milliseconds(),
 	})

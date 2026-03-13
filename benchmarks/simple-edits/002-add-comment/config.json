@@ -1,0 +1,4 @@
+{
+  "category": "simple-edits",
+  "expected_tools": ["read", "edit"]
+}

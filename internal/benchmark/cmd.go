@@ -22,6 +22,9 @@ type CLIArgs struct {
 func ParseCLIArgs(args []string) (CLIArgs, error) {
 	var a CLIArgs
 	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return a, fmt.Errorf("usage: nanocode benchmark --suite=<path> | --task=<path>")
+		}
 		switch {
 		case strings.HasPrefix(arg, "--suite="):
 			a.SuitePath = strings.TrimPrefix(arg, "--suite=")

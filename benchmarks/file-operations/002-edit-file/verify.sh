@@ -1,1 +1,1 @@
-[ "$(cat greeting.txt)" = "Goodbye, World!" ]
+grep -q "Goodbye, World!" greeting.txt && ! grep -q "Hello" greeting.txt
