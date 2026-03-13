@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/store"
@@ -83,5 +84,7 @@ func (fc *FailureCollector) Record(ctx context.Context, failType FailureType, de
 	}
 
 	// Best-effort: log errors but don't fail the engine run.
-	_ = fc.store.CreateFailure(ctx, rec)
+	if err := fc.store.CreateFailure(ctx, rec); err != nil {
+		log.Printf("failure collector: CreateFailure: %v", err)
+	}
 }

@@ -28,8 +28,14 @@ func ParseCLIArgs(args []string) (CLIArgs, error) {
 		switch {
 		case strings.HasPrefix(arg, "--suite="):
 			a.SuitePath = strings.TrimPrefix(arg, "--suite=")
+			if a.SuitePath == "" {
+				return a, fmt.Errorf("missing value for --suite")
+			}
 		case strings.HasPrefix(arg, "--task="):
 			a.TaskPath = strings.TrimPrefix(arg, "--task=")
+			if a.TaskPath == "" {
+				return a, fmt.Errorf("missing value for --task")
+			}
 		default:
 			return a, fmt.Errorf("unknown benchmark argument: %s", arg)
 		}

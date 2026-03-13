@@ -60,7 +60,7 @@ func (m *Manager) Track(filePath string) {
 	}
 
 	// Stage the file
-	addCmd := exec.Command("git", "add", absPath)
+	addCmd := exec.Command("git", "add", "--", absPath)
 	addCmd.Dir = m.projectDir
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		log.Printf("snapshot: git add: %s %v", strings.TrimSpace(string(out)), err)

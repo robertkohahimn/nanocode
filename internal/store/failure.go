@@ -60,6 +60,13 @@ func (s *SQLiteStore) CreateFailure(ctx context.Context, rec *FailureRecord) err
 }
 
 func (s *SQLiteStore) ListFailures(ctx context.Context, since int64, limit int) ([]FailureRecord, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive, got %d", limit)
+	}
+	const maxLimit = 1000
+	if limit > maxLimit {
+		limit = maxLimit
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, timestamp, failure_type, description, tools_used, files_touched, iterations, notes
 		 FROM failures WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?`,

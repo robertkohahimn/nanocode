@@ -246,6 +246,12 @@ func (t *TaskGetTool) Execute(ctx context.Context, input json.RawMessage) (strin
 		return "", fmt.Errorf("getting task: %w", err)
 	}
 
+	// Verify the task belongs to the caller's session
+	sessionID := t.GetSessionID()
+	if sessionID != "" && task.SessionID != sessionID {
+		return "", fmt.Errorf("task %s not found", in.ID)
+	}
+
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "ID:          %s\n", task.ID)
 	fmt.Fprintf(&buf, "Subject:     %s\n", task.Subject)

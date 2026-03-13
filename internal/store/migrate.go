@@ -104,7 +104,9 @@ func Migrate(db *sql.DB) error {
 		}
 
 		if _, err := tx.Exec(migrations[i]); err != nil {
-			tx.Rollback()
+			if rbErr := tx.Rollback(); rbErr != nil {
+				return fmt.Errorf("applying migration %d: %w (rollback also failed: %v)", i+1, err, rbErr)
+			}
 			return fmt.Errorf("applying migration %d: %w", i+1, err)
 		}
 
