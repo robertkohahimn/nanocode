@@ -50,6 +50,21 @@ var migrations = []string{
 	DROP TABLE messages;
 	ALTER TABLE messages_new RENAME TO messages;
 	CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);`,
+
+	// Version 4: failure case collection
+	`CREATE TABLE IF NOT EXISTS failures (
+		id            TEXT PRIMARY KEY,
+		session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		timestamp     INTEGER NOT NULL,
+		failure_type  TEXT NOT NULL,
+		description   TEXT NOT NULL DEFAULT '',
+		tools_used    TEXT NOT NULL DEFAULT '[]',
+		files_touched TEXT NOT NULL DEFAULT '[]',
+		iterations    INTEGER NOT NULL DEFAULT 0,
+		notes         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS idx_failures_session ON failures(session_id);
+	CREATE INDEX IF NOT EXISTS idx_failures_timestamp ON failures(timestamp DESC);`,
 }
 
 // Migrate ensures the database schema is up to date.

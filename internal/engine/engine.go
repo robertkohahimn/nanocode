@@ -328,6 +328,9 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		logger.LogSessionEnd(iterations+1, time.Since(loopStart))
 	}()
 
+	// Failure collection: track tool usage and record failures.
+	fc := NewFailureCollector(e.store, sessionID)
+
 	// Track per-file edits to detect doom loops (same file edited repeatedly).
 	fileEditCounts := make(map[string]int)
 	const maxFileEdits = 5
@@ -412,6 +415,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					if fileEditCounts[key] > maxFileEdits {
 						logger.LogToolCall(tc.Name, 0, true)
 						logger.LogDoomLoop(key, fileEditCounts[key])
+						fc.TrackFile(key)
+						fc.Record(ctx, FailureDoomLoop, fmt.Sprintf("file %s edited %d times", key, fileEditCounts[key]), iterations+1)
 						resultBlocks = append(resultBlocks, provider.ContentBlock{
 							Type: "tool_result",
 							ToolResult: &provider.ToolResult{
@@ -435,6 +440,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			result := e.tools.Execute(ctx, tc)
 			elapsed := time.Since(toolStart)
 			logger.LogToolCall(tc.Name, elapsed, result.IsError)
+			fc.TrackTool(tc.Name)
 			e.mu.Lock()
 			e.lastRunRecords = append(e.lastRunRecords, ToolRecord{
 				Name:       tc.Name,
@@ -462,5 +468,6 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		messages = append(messages, *assistantMsg, resultMsg)
 	}
 
+	fc.Record(ctx, FailureMaxIter, fmt.Sprintf("reached %d iterations", maxIterations), maxIterations)
 	return fmt.Errorf("maximum iterations (%d) reached", maxIterations)
 }
