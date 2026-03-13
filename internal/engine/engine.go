@@ -107,6 +107,7 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		&tool.GlobTool{},
 		&tool.GrepTool{BaseDir: baseDir},
 		bashTool,
+		&tool.AskUserQuestionTool{StdinReader: stdinReader},
 	}
 
 	// MCP tools

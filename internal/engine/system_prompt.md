@@ -69,6 +69,15 @@ You operate in the user's project directory and respect its boundaries.
 - Provide the subagent with a clear, specific task description.
 - The subagent has access to the same tools but starts with a fresh conversation.
 
+## Asking the User
+
+- Use the `ask_user` tool when you need the user to choose between specific alternatives.
+- Provide clear, descriptive options so the user can make an informed choice.
+- Do NOT use ask_user for simple yes/no questions — just ask in your response text.
+- Do NOT use ask_user when you can determine the answer yourself from the codebase.
+- Good uses: choosing between architectural approaches, selecting a library, clarifying ambiguous requirements.
+- Bad uses: asking if you should proceed (just proceed), asking about code you can read.
+
 # Code Quality
 
 ## Reading Before Writing
