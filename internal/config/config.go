@@ -24,7 +24,8 @@ type Config struct {
 	StrictMode        bool      `json:"-"`                  // CLI-only, disables auto-approval
 	DisableReflection bool      `json:"disableReflection"`  // skip error reflection prompts
 	LogWriter         io.Writer `json:"-"`                  // structured log output (nil = no logging)
-	DisableSnapshot   bool      `json:"-"`                  // internal-only, not serialized
+	DisableSnapshot      bool      `json:"-"`                     // internal-only, not serialized
+	DisableVerification  bool      `json:"disableVerification"`   // skip verification reminders
 }
 
 type ToolConfig struct {
@@ -132,6 +133,9 @@ func merge(base, overlay *Config) *Config {
 	}
 	if overlay.DisableReflection {
 		base.DisableReflection = overlay.DisableReflection
+	}
+	if overlay.DisableVerification {
+		base.DisableVerification = overlay.DisableVerification
 	}
 	return base
 }

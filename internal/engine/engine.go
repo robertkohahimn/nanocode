@@ -343,6 +343,9 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	fileEditCounts := make(map[string]int)
 	const maxFileEdits = 5
 
+	// Track verification state for edit-then-verify enforcement.
+	verifyState := &VerifyState{}
+
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -384,8 +387,17 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 
 		logger.LogIteration(iterations+1, len(toolCalls))
 
-		// If no tool calls, we are done
+		// If no tool calls, check verification before finishing
 		if len(toolCalls) == 0 {
+			if verifyState.IsPending() && !cfg.DisableVerification {
+				reminderMsg := provider.Message{
+					Role:    provider.RoleUser,
+					Content: []provider.ContentBlock{{Type: "text", Text: verifyState.ReminderText()}},
+				}
+				messages = append(messages, *assistantMsg, reminderMsg)
+				verifyState.MarkVerified() // Only remind once
+				continue
+			}
 			return nil
 		}
 
@@ -457,6 +469,25 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				Type:       "tool_result",
 				ToolResult: result,
 			})
+			// Track verification state
+			if !result.IsError {
+				if tc.Name == "edit" || tc.Name == "write" {
+					var inp struct {
+						FilePath string `json:"file_path"`
+					}
+					if json.Unmarshal(tc.Input, &inp) == nil && inp.FilePath != "" {
+						verifyState.MarkEdit(inp.FilePath)
+					}
+				}
+				if tc.Name == "bash" {
+					var inp struct {
+						Command string `json:"command"`
+					}
+					if json.Unmarshal(tc.Input, &inp) == nil && IsVerifyCommand(inp.Command) {
+						verifyState.MarkVerified()
+					}
+				}
+			}
 			if result.IsError && !cfg.DisableReflection {
 				resultBlocks = append(resultBlocks, provider.ContentBlock{
 					Type: "text",
