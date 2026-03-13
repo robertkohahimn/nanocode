@@ -328,9 +328,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		logger.LogSessionEnd(iterations+1, time.Since(loopStart))
 	}()
 
-	// Track per-file edits to detect doom loops (same file edited repeatedly).
-	fileEditCounts := make(map[string]int)
-	const maxFileEdits = 5
+	// Semantic doom loop detector replaces the old per-file edit counter.
+	loopDetector := NewLoopDetector()
 
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
@@ -378,28 +377,27 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			return nil
 		}
 
-		// Execute tools with doom loop detection
+		// Execute tools with semantic doom loop detection
 		var resultBlocks []provider.ContentBlock
+		injectWarning := func(w *LoopWarning) {
+			if !cfg.DisableReflection {
+				resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: FormatWarning(w)})
+			}
+		}
 		for _, tc := range toolCalls {
 			if tc.Name == "edit" || tc.Name == "write" {
 				var inp struct {
-					FilePath string `json:"file_path"`
+					FilePath  string `json:"file_path"`
+					Content   string `json:"content"`
+					NewString string `json:"new_string"`
 				}
 				if err := json.Unmarshal(tc.Input, &inp); err != nil {
 					logger.LogToolCall(tc.Name, 0, true)
-					resultBlocks = append(resultBlocks, provider.ContentBlock{
-						Type: "tool_result",
-						ToolResult: &provider.ToolResult{
-							ToolCallID: tc.ID,
-							Content:    fmt.Sprintf("Failed to parse %s input: %v", tc.Name, err),
-							IsError:    true,
-						},
-					})
+					resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
+						ToolCallID: tc.ID, Content: fmt.Sprintf("Failed to parse %s input: %v", tc.Name, err), IsError: true,
+					}})
 					if !cfg.DisableReflection {
-						resultBlocks = append(resultBlocks, provider.ContentBlock{
-							Type: "text",
-							Text: errorReflectionPrompt,
-						})
+						resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
 					}
 					continue
 				}
@@ -408,49 +406,48 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 					if cfg.ProjectDir != "" && !filepath.IsAbs(key) {
 						key = filepath.Clean(filepath.Join(cfg.ProjectDir, key))
 					}
-					fileEditCounts[key]++
-					if fileEditCounts[key] > maxFileEdits {
-						logger.LogToolCall(tc.Name, 0, true)
-						logger.LogDoomLoop(key, fileEditCounts[key])
-						resultBlocks = append(resultBlocks, provider.ContentBlock{
-							Type: "tool_result",
-							ToolResult: &provider.ToolResult{
-								ToolCallID: tc.ID,
-								Content:    fmt.Sprintf("Doom loop detected: %s has been edited %d times. Stop and report to the user.", key, fileEditCounts[key]),
-								IsError:    true,
-							},
-						})
-						if !cfg.DisableReflection {
-							resultBlocks = append(resultBlocks, provider.ContentBlock{
-								Type: "text",
-								Text: errorReflectionPrompt,
-							})
+					editContent := inp.Content
+					if tc.Name == "edit" {
+						editContent = inp.NewString
+					}
+					if w := loopDetector.CheckEdit(key, editContent); w != nil {
+						if w.Type == "edit_count" {
+							logger.LogToolCall(tc.Name, 0, true)
+							logger.LogDoomLoop(key, loopDetector.editCounts[key])
+							resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
+								ToolCallID: tc.ID, Content: w.Detail, IsError: true,
+							}})
+							injectWarning(w)
+							continue
 						}
-						continue
+						injectWarning(w)
 					}
 				}
 			}
-
+			if tc.Name == "bash" {
+				var inp struct{ Command string `json:"command"` }
+				if err := json.Unmarshal(tc.Input, &inp); err == nil && inp.Command != "" {
+					if w := loopDetector.CheckCommand(inp.Command); w != nil {
+						injectWarning(w)
+					}
+				}
+			}
 			toolStart := time.Now()
 			result := e.tools.Execute(ctx, tc)
 			elapsed := time.Since(toolStart)
 			logger.LogToolCall(tc.Name, elapsed, result.IsError)
 			e.mu.Lock()
 			e.lastRunRecords = append(e.lastRunRecords, ToolRecord{
-				Name:       tc.Name,
-				DurationMs: elapsed.Milliseconds(),
-				IsError:    result.IsError,
+				Name: tc.Name, DurationMs: elapsed.Milliseconds(), IsError: result.IsError,
 			})
 			e.mu.Unlock()
-			resultBlocks = append(resultBlocks, provider.ContentBlock{
-				Type:       "tool_result",
-				ToolResult: result,
-			})
+			resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: result})
 			if result.IsError && !cfg.DisableReflection {
-				resultBlocks = append(resultBlocks, provider.ContentBlock{
-					Type: "text",
-					Text: errorReflectionPrompt,
-				})
+				if w := loopDetector.CheckError(result.Content); w != nil {
+					injectWarning(w)
+				} else {
+					resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
+				}
 			}
 		}
 
