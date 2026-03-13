@@ -113,25 +113,25 @@ func TestEngineErrorReflectionDoomLoop(t *testing.T) {
 	}
 
 	// The second request's last user message should contain:
-	// 1. A tool_result with "Doom loop detected"
-	// 2. A text block with the reflection prompt
+	// 1. A tool_result with edit count exceeded message
+	// 2. A text block with the loop-detected intervention prompt
 	secondReq := mp.requests[1]
 	lastMsg := secondReq.Messages[len(secondReq.Messages)-1]
 	foundDoomLoop := false
-	foundReflection := false
+	foundIntervention := false
 	for _, cb := range lastMsg.Content {
-		if cb.Type == "tool_result" && cb.ToolResult != nil && strings.Contains(cb.ToolResult.Content, "Doom loop detected") {
+		if cb.Type == "tool_result" && cb.ToolResult != nil && strings.Contains(cb.ToolResult.Content, "has been edited") {
 			foundDoomLoop = true
 		}
-		if cb.Type == "text" && strings.Contains(cb.Text, "<error-reflection>") {
-			foundReflection = true
+		if cb.Type == "text" && strings.Contains(cb.Text, "<loop-detected") {
+			foundIntervention = true
 		}
 	}
 	if !foundDoomLoop {
-		t.Error("expected doom loop error in tool results")
+		t.Error("expected edit count doom loop error in tool results")
 	}
-	if !foundReflection {
-		t.Error("expected error reflection prompt after doom loop error")
+	if !foundIntervention {
+		t.Error("expected loop-detected intervention prompt after doom loop error")
 	}
 }
 
