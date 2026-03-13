@@ -32,7 +32,8 @@ func RunFailuresCLI(ctx context.Context, args []string, st store.Store, w io.Wri
 		}
 		return failuresAnnotate(ctx, args[1], args[2:], st, w)
 	default:
-		return failuresUsage(w)
+		failuresUsage(w)
+		return fmt.Errorf("unknown failures subcommand: %q", args[0])
 	}
 }
 
@@ -140,8 +141,9 @@ func parseDuration(s string) (time.Duration, error) {
 }
 
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
-	return s[:max-3] + "..."
+	return string(runes[:max-3]) + "..."
 }

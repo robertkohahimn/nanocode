@@ -44,7 +44,7 @@ func NewFailureCollector(st store.Store, sessionID string) *FailureCollector {
 
 // TrackTool records that a tool was used during this run.
 func (fc *FailureCollector) TrackTool(name string) {
-	if fc == nil {
+	if fc == nil || name == "" {
 		return
 	}
 	fc.toolsUsed[name] = true
@@ -52,7 +52,7 @@ func (fc *FailureCollector) TrackTool(name string) {
 
 // TrackFile records that a file was edited during this run.
 func (fc *FailureCollector) TrackFile(path string) {
-	if fc == nil {
+	if fc == nil || path == "" {
 		return
 	}
 	fc.fileEdits[path] = true

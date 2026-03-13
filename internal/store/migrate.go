@@ -110,14 +110,16 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("applying migration %d: %w", i+1, err)
 		}
 
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("committing migration %d: %w", i+1, err)
+		// Set version inside the transaction so schema and version are atomic
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				return fmt.Errorf("setting version %d: %w (rollback also failed: %v)", i+1, err, rbErr)
+			}
+			return fmt.Errorf("setting version %d: %w", i+1, err)
 		}
 
-		// PRAGMA user_version is not transactional in SQLite, so set it after commit
-		// This ensures version is only bumped after migration succeeds
-		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-			return fmt.Errorf("setting version %d: %w", i+1, err)
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing migration %d: %w", i+1, err)
 		}
 	}
 

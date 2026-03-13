@@ -333,6 +333,9 @@ func (a *benchmarkEngineAdapter) Close() error {
 
 func runFailures(ctx context.Context, args []string) error {
 	dbPath := filepath.Join(xdgDataHome(), "nanocode", "nanocode.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return fmt.Errorf("creating data directory: %w", err)
+	}
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)

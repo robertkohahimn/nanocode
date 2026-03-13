@@ -17,7 +17,6 @@ func TestIsVerifyCommandPositive(t *testing.T) {
 		"go test ./...",
 		"go build",
 		"go vet ./...",
-		"go run main.go",
 		"npm test",
 		"npm run test",
 		"npm run build",
@@ -33,7 +32,6 @@ func TestIsVerifyCommandPositive(t *testing.T) {
 		"make test",
 		"make build",
 		"make check",
-		"make",
 		"mvn test",
 		"mvn compile",
 		"gradle test",
@@ -41,7 +39,6 @@ func TestIsVerifyCommandPositive(t *testing.T) {
 		"dotnet test",
 		"dotnet build",
 		"mix test",
-		"elixir test.exs",
 		"  go test ./...",  // leading whitespace
 		"GO TEST ./...",    // uppercase
 	}
@@ -61,6 +58,9 @@ func TestIsVerifyCommandNegative(t *testing.T) {
 		"cd /tmp",
 		"rm -rf /",
 		"grep test",
+		"go run main.go",
+		"make",
+		"elixir test.exs",
 		"",
 	}
 	for _, cmd := range negatives {

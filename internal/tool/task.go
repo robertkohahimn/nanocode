@@ -107,6 +107,16 @@ func (t *TaskUpdateTool) Execute(ctx context.Context, input json.RawMessage) (st
 		return "", fmt.Errorf("id is required")
 	}
 
+	// Verify task belongs to current session
+	sessionID := t.GetSessionID()
+	task, err := t.Store.GetTask(ctx, in.ID)
+	if err != nil {
+		return "", fmt.Errorf("task not found: %s", in.ID)
+	}
+	if sessionID != "" && task.SessionID != sessionID {
+		return "", fmt.Errorf("task %s not found", in.ID)
+	}
+
 	// Handle deletion
 	if in.Status == "deleted" {
 		if err := t.Store.DeleteTask(ctx, in.ID); err != nil {
