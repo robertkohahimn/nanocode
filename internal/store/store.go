@@ -28,6 +28,10 @@ type Store interface {
 	ListTasks(ctx context.Context, sessionID string) ([]Task, error)
 	DeleteTask(ctx context.Context, id string) error
 	AddTaskDep(ctx context.Context, taskID, blockedBy string) error
+	CreateFailure(ctx context.Context, rec *FailureRecord) error
+	ListFailures(ctx context.Context, since int64, limit int) ([]FailureRecord, error)
+	GetFailure(ctx context.Context, id string) (*FailureRecord, error)
+	AnnotateFailure(ctx context.Context, id string, failureType string, notes string) error
 	Close() error
 }
 

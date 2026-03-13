@@ -31,9 +31,12 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// Check for benchmark subcommand before normal arg parsing.
+	// Check for subcommands before normal arg parsing.
 	if len(os.Args) > 1 && os.Args[1] == "benchmark" {
 		return runBenchmark(ctx, os.Args[2:])
+	}
+	if len(os.Args) > 1 && os.Args[1] == "failures" {
+		return runFailures(ctx, os.Args[2:])
 	}
 
 	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm, logPath := parseArgs(os.Args[1:])
@@ -326,6 +329,17 @@ func (a *benchmarkEngineAdapter) Run(ctx context.Context, prompt string) ([]benc
 func (a *benchmarkEngineAdapter) Close() error {
 	a.eng.Close()
 	return nil
+}
+
+func runFailures(ctx context.Context, args []string) error {
+	dbPath := filepath.Join(xdgDataHome(), "nanocode", "nanocode.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer st.Close()
+
+	return engine.RunFailuresCLI(ctx, args, st, os.Stdout)
 }
 
 func xdgDataHome() string {

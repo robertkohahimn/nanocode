@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -133,6 +134,9 @@ func TestVerifyStateMultipleEditsBeforeVerify(t *testing.T) {
 }
 
 func TestEngineVerificationReminder(t *testing.T) {
+	// Use a unique temp file to avoid read-before-write enforcement on existing files
+	tmpFile := filepath.Join(t.TempDir(), "test_verify_harness.go")
+
 	st, err := store.OpenMemory()
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +150,7 @@ func TestEngineVerificationReminder(t *testing.T) {
 				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
 					ID:    "tc1",
 					Name:  "write",
-					Input: json.RawMessage(`{"file_path":"/tmp/test_verify_harness.go","content":"package main"}`),
+					Input: json.RawMessage(fmt.Sprintf(`{"file_path":%q,"content":"package main"}`, tmpFile)),
 				}},
 				{Type: provider.EventDone},
 			},
@@ -205,13 +209,15 @@ func TestEngineVerificationReminder(t *testing.T) {
 		for i, msg := range thirdReq.Messages {
 			t.Logf("  msg[%d] role=%s blocks=%d", i, msg.Role, len(msg.Content))
 			for j, cb := range msg.Content {
-				t.Logf("    block[%d] type=%s text=%s", j, cb.Type, truncate(cb.Text, 80))
+				t.Logf("    block[%d] type=%s text=%s", j, cb.Type, truncateStr(cb.Text, 80))
 			}
 		}
 	}
 }
 
 func TestEngineVerificationDisabled(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test_verify_disabled.go")
+
 	st, err := store.OpenMemory()
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +231,7 @@ func TestEngineVerificationDisabled(t *testing.T) {
 				{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{
 					ID:    "tc1",
 					Name:  "write",
-					Input: json.RawMessage(`{"file_path":"/tmp/test_verify_disabled.go","content":"package main"}`),
+					Input: json.RawMessage(fmt.Sprintf(`{"file_path":%q,"content":"package main"}`, tmpFile)),
 				}},
 				{Type: provider.EventDone},
 			},
@@ -255,7 +261,7 @@ func TestEngineVerificationDisabled(t *testing.T) {
 	}
 }
 
-func truncate(s string, n int) string {
+func truncateStr(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
