@@ -116,6 +116,16 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 				result.DurationMs = time.Since(start).Milliseconds()
 				return result
 			}
+			// Create a fresh engine for each retry to avoid accumulated state.
+			eng, err = r.EngineFactory(workDir)
+			if err != nil {
+				result.Error = fmt.Sprintf("creating engine for retry: %v", err)
+				result.DurationMs = time.Since(start).Milliseconds()
+				return result
+			}
+			if closer, ok := eng.(io.Closer); ok {
+				defer closer.Close()
+			}
 		}
 		records, runErr = eng.Run(ctx, task.Prompt)
 		if runErr == nil || !strings.Contains(runErr.Error(), "429") {
@@ -142,6 +152,9 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 		if verifyErr != nil && result.Error == "" {
 			result.Error = fmt.Sprintf("verification failed: %v", verifyErr)
 		}
+	} else {
+		// No verify script means the task passed if the engine run succeeded.
+		result.Passed = true
 	}
 
 	return result

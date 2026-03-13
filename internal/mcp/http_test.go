@@ -10,7 +10,6 @@ import (
 )
 
 func TestHTTPClient_JSON(t *testing.T) {
-	idCounter := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -31,7 +30,6 @@ func TestHTTPClient_JSON(t *testing.T) {
 			return
 		}
 
-		idCounter++
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Mcp-Session-Id", "test-session-123")
 
@@ -192,7 +190,10 @@ func TestHTTPClient_SessionHeader(t *testing.T) {
 		receivedSessionID = r.Header.Get("Mcp-Session-Id")
 
 		var req JSONRPCRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		if callCount == 1 {

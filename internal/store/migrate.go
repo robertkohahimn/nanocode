@@ -50,6 +50,39 @@ var migrations = []string{
 	DROP TABLE messages;
 	ALTER TABLE messages_new RENAME TO messages;
 	CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);`,
+
+	// Version 4: task tracking
+	`CREATE TABLE IF NOT EXISTS tasks (
+		id          TEXT PRIMARY KEY,
+		session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		subject     TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		status      TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed')),
+		created_at  INTEGER NOT NULL,
+		updated_at  INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id);
+
+	CREATE TABLE IF NOT EXISTS task_deps (
+		task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		blocked_by TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		PRIMARY KEY (task_id, blocked_by)
+	);`,
+
+	// Version 5: failure case collection
+	`CREATE TABLE IF NOT EXISTS failures (
+		id            TEXT PRIMARY KEY,
+		session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		timestamp     INTEGER NOT NULL,
+		failure_type  TEXT NOT NULL,
+		description   TEXT NOT NULL DEFAULT '',
+		tools_used    TEXT NOT NULL DEFAULT '[]',
+		files_touched TEXT NOT NULL DEFAULT '[]',
+		iterations    INTEGER NOT NULL DEFAULT 0,
+		notes         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS idx_failures_session ON failures(session_id);
+	CREATE INDEX IF NOT EXISTS idx_failures_timestamp ON failures(timestamp DESC);`,
 }
 
 // Migrate ensures the database schema is up to date.
@@ -71,18 +104,22 @@ func Migrate(db *sql.DB) error {
 		}
 
 		if _, err := tx.Exec(migrations[i]); err != nil {
-			tx.Rollback()
+			if rbErr := tx.Rollback(); rbErr != nil {
+				return fmt.Errorf("applying migration %d: %w (rollback also failed: %v)", i+1, err, rbErr)
+			}
 			return fmt.Errorf("applying migration %d: %w", i+1, err)
+		}
+
+		// Set version inside the transaction so schema and version are atomic
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				return fmt.Errorf("setting version %d: %w (rollback also failed: %v)", i+1, err, rbErr)
+			}
+			return fmt.Errorf("setting version %d: %w", i+1, err)
 		}
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("committing migration %d: %w", i+1, err)
-		}
-
-		// PRAGMA user_version is not transactional in SQLite, so set it after commit
-		// This ensures version is only bumped after migration succeeds
-		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-			return fmt.Errorf("setting version %d: %w", i+1, err)
 		}
 	}
 
