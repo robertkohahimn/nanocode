@@ -69,7 +69,7 @@ func IsVerifyCommand(cmd string) bool {
 	}
 	lower := strings.ToLower(strings.TrimSpace(cmd))
 	for _, p := range verifyPatterns {
-		if strings.HasPrefix(lower, p) {
+		if strings.HasPrefix(lower, p) && (len(lower) == len(p) || lower[len(p)] == ' ') {
 			return true
 		}
 	}

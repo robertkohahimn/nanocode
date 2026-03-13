@@ -60,6 +60,8 @@ func TestIsVerifyCommandNegative(t *testing.T) {
 		"grep test",
 		"go run main.go",
 		"make",
+		"make testing-harness",
+		"go testing",
 		"elixir test.exs",
 		"",
 	}
