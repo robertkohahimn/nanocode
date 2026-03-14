@@ -27,6 +27,8 @@ type Config struct {
 	DisableSnapshot      bool      `json:"-"`                     // internal-only, not serialized
 	DisableVerification  bool      `json:"disableVerification"`   // skip verification reminders
 	CheckpointInterval   int       `json:"checkpointInterval"`    // 0 = disabled
+	SummarizeThreshold  int `json:"summarizeThreshold"`  // 0 = disabled (use windowing)
+	SummarizeKeepRecent int `json:"summarizeKeepRecent"` // messages to keep unsummarized
 }
 
 type ToolConfig struct {
@@ -140,6 +142,12 @@ func merge(base, overlay *Config) *Config {
 	}
 	if overlay.CheckpointInterval != 0 {
 		base.CheckpointInterval = overlay.CheckpointInterval
+	}
+	if overlay.SummarizeThreshold != 0 {
+		base.SummarizeThreshold = overlay.SummarizeThreshold
+	}
+	if overlay.SummarizeKeepRecent != 0 {
+		base.SummarizeKeepRecent = overlay.SummarizeKeepRecent
 	}
 	return base
 }
