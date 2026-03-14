@@ -54,6 +54,12 @@ func (v *VerifyState) ReminderText() string {
 	)
 }
 
+// isCommandDelimiter returns true if the byte is a valid shell delimiter
+// that can follow a command name (space, semicolon, pipe, ampersand).
+func isCommandDelimiter(b byte) bool {
+	return b == ' ' || b == ';' || b == '|' || b == '&'
+}
+
 // IsVerifyCommand checks if a bash command is a verification command.
 func IsVerifyCommand(cmd string) bool {
 	verifyPatterns := []string{
@@ -69,7 +75,7 @@ func IsVerifyCommand(cmd string) bool {
 	}
 	lower := strings.ToLower(strings.TrimSpace(cmd))
 	for _, p := range verifyPatterns {
-		if strings.HasPrefix(lower, p) && (len(lower) == len(p) || lower[len(p)] == ' ') {
+		if strings.HasPrefix(lower, p) && (len(lower) == len(p) || isCommandDelimiter(lower[len(p)])) {
 			return true
 		}
 	}

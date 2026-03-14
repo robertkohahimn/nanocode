@@ -25,7 +25,7 @@ func makeMsgs(n int) []provider.Message {
 }
 
 func TestSummarizerBelowThreshold(t *testing.T) {
-	s := NewSummarizer(nil, 30, 10)
+	s := NewSummarizer(nil, "test-model", 30, 10)
 	msgs := makeMsgs(20)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSummarizerBelowThreshold(t *testing.T) {
 }
 
 func TestSummarizerDisabled(t *testing.T) {
-	s := NewSummarizer(nil, 0, 10)
+	s := NewSummarizer(nil, "test-model", 0, 10)
 	msgs := makeMsgs(50)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestSummarizerTriggersAboveThreshold(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10)
 	msgs := makeMsgs(35)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestSummarizerFallbackOnError(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10)
 	msgs := makeMsgs(50) // >40 so windowMessages actually truncates
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestSummarizerPreservesRecentMessages(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10)
 	msgs := makeMsgs(40)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -143,7 +143,7 @@ func TestSummarizerWithExistingSummary(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, 10, 5)
+	s := NewSummarizer(mp, "test-model", 10, 5)
 
 	msgs := makeMsgs(15)
 	msgs[1] = provider.Message{

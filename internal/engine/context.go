@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -66,7 +67,12 @@ func BuildProjectContext(projectDir string) string {
 		if readErr == nil && len(data) > 0 {
 			content := string(data)
 			if len(data) > maxProjectCtx {
-				content = content[:maxProjectCtx] + "\n... (truncated at 1MB)"
+				// Truncate at a valid UTF-8 boundary to avoid splitting multi-byte characters.
+				truncated := data[:maxProjectCtx]
+				for len(truncated) > 0 && !utf8.Valid(truncated) {
+					truncated = truncated[:len(truncated)-1]
+				}
+				content = string(truncated) + "\n... (truncated at 1MB)"
 			}
 			sb.WriteString("\n")
 			sb.WriteString(content)

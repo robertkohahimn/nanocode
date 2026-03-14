@@ -22,16 +22,17 @@ const maxSummaryInput = 100 * 1024 // 100KB
 // Summarizer compresses old conversation messages using the LLM provider.
 type Summarizer struct {
 	provider  provider.Provider
-	threshold int // message count to trigger summarization (0 = disabled)
-	keepN     int // number of recent messages to keep unsummarized
+	model     string // model name to use for summarization requests
+	threshold int    // message count to trigger summarization (0 = disabled)
+	keepN     int    // number of recent messages to keep unsummarized
 }
 
 // NewSummarizer creates a Summarizer. If threshold is 0, summarization is disabled.
-func NewSummarizer(p provider.Provider, threshold, keepN int) *Summarizer {
+func NewSummarizer(p provider.Provider, model string, threshold, keepN int) *Summarizer {
 	if keepN <= 0 {
 		keepN = 10
 	}
-	return &Summarizer{provider: p, threshold: threshold, keepN: keepN}
+	return &Summarizer{provider: p, model: model, threshold: threshold, keepN: keepN}
 }
 
 // MaybeSummarize compresses messages if they exceed the threshold.
@@ -100,6 +101,7 @@ func (s *Summarizer) generateSummary(ctx context.Context, messages []provider.Me
 	}
 
 	req := &provider.Request{
+		Model: s.model,
 		Messages: []provider.Message{
 			{
 				Role: provider.RoleUser,

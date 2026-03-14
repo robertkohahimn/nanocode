@@ -50,6 +50,9 @@ type Engine struct {
 	mu               sync.Mutex        // protects lastRunRecords
 	lastRunRecords   []ToolRecord
 	currentSessionID string // set per Run/Resume for task tools
+	bashTool         *tool.BashTool         // for batch confirmation
+	permChecker      *permission.Checker    // for batch confirmation (nil if no perm config)
+	stdinReader      *bufio.Reader          // for batch confirmation (nil in auto-confirm)
 }
 
 // New creates an Engine with the given dependencies.
@@ -66,10 +69,12 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	}
 
 	// Permission system: wire allow/deny/autoApprove into bash confirm hook
+	var permChecker *permission.Checker
 	if bashCfg, ok := cfg.Tools["bash"]; ok {
 		hasPermConfig := len(bashCfg.Allow) > 0 || len(bashCfg.Deny) > 0 || len(bashCfg.AutoApprove) > 0
 		if hasPermConfig {
-			checker := permission.NewChecker(bashCfg.Allow, bashCfg.Deny, bashCfg.AutoApprove)
+			permChecker = permission.NewChecker(bashCfg.Allow, bashCfg.Deny, bashCfg.AutoApprove)
+			checker := permChecker
 			origConfirm := bashTool.ConfirmFunc
 			bashTool.ConfirmFunc = func(cmd string) bool {
 				result := checker.Check(cmd)
@@ -113,12 +118,21 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 	mcpTools, mcpClients := loadMCPTools(cfg)
 	allTools = append(allTools, mcpTools...)
 
+	// Only store stdinReader for batch confirmation when not in auto-confirm mode
+	var batchReader *bufio.Reader
+	if !autoConfirm {
+		batchReader = stdinReader
+	}
+
 	eng := &Engine{
-		provider:   p,
-		store:      s,
-		config:     cfg,
-		mcpClients: mcpClients,
-		snapMgr:    snapMgr,
+		provider:    p,
+		store:       s,
+		config:      cfg,
+		mcpClients:  mcpClients,
+		snapMgr:     snapMgr,
+		bashTool:    bashTool,
+		permChecker: permChecker,
+		stdinReader: batchReader,
 	}
 
 	getSessionID := func() string { return eng.currentSessionID }
@@ -274,7 +288,13 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	loopStart := time.Now()
 	var iterations int
 	defer func() {
-		logger.LogSessionEnd(iterations+1, time.Since(loopStart))
+		// iterations is 0-based; on early exit it's the current index (needs +1).
+		// On maxIterations exhaustion, the for-loop post-increment sets it to maxIterations.
+		count := iterations + 1
+		if count > maxIterations {
+			count = maxIterations
+		}
+		logger.LogSessionEnd(count, time.Since(loopStart))
 	}()
 
 	// Failure collection: track tool usage and record failures.
@@ -287,7 +307,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	verifyState := &VerifyState{}
 
 	checkpoint := NewCheckpointInjector(cfg.CheckpointInterval)
-	summarizer := NewSummarizer(e.provider, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent)
+	summarizer := NewSummarizer(e.provider, cfg.Model, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent)
 
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
@@ -359,6 +379,13 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 				continue
 			}
 			return nil
+		}
+
+		// Batch confirmation: prompt for multiple bash commands at once
+		if e.stdinReader != nil && e.bashTool != nil {
+			if err := collectBashConfirmations(toolCalls, e.bashTool, e.permChecker, e.stdinReader, os.Stderr); err != nil {
+				log.Printf("engine: batch confirmation error: %v", err)
+			}
 		}
 
 		// Execute tools with semantic doom loop detection
