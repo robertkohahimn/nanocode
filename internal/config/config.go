@@ -29,6 +29,11 @@ type Config struct {
 	CheckpointInterval   int       `json:"checkpointInterval"`    // 0 = disabled
 	SummarizeThreshold  int `json:"summarizeThreshold"`  // 0 = disabled (use windowing)
 	SummarizeKeepRecent int `json:"summarizeKeepRecent"` // messages to keep unsummarized
+
+	// These track whether boolean fields were explicitly set in config JSON,
+	// allowing merge to distinguish "not set" from "set to false".
+	disableReflectionSet   bool
+	disableVerificationSet bool
 }
 
 type ToolConfig struct {
@@ -87,16 +92,59 @@ func Load(projectDir string) (*Config, error) {
 	return cfg, nil
 }
 
+// configJSON mirrors Config but uses *bool for boolean fields so that
+// merge can distinguish "not set" (nil) from "explicitly set to false".
+type configJSON struct {
+	Provider            string                     `json:"provider"`
+	Model               string                     `json:"model"`
+	APIKey              string                     `json:"apiKey"`
+	MaxTokens           int                        `json:"maxTokens"`
+	System              string                     `json:"system"`
+	Tools               map[string]ToolConfig      `json:"tools"`
+	MCPServers          map[string]MCPServerConfig `json:"mcpServers"`
+	BaseURL             string                     `json:"baseURL"`
+	DisableReflection   *bool                      `json:"disableReflection"`
+	DisableVerification *bool                      `json:"disableVerification"`
+	CheckpointInterval  int                        `json:"checkpointInterval"`
+	SummarizeThreshold  int                        `json:"summarizeThreshold"`
+	SummarizeKeepRecent int                        `json:"summarizeKeepRecent"`
+}
+
+func (cj *configJSON) toConfig() *Config {
+	cfg := &Config{
+		Provider:           cj.Provider,
+		Model:              cj.Model,
+		APIKey:             cj.APIKey,
+		MaxTokens:          cj.MaxTokens,
+		System:             cj.System,
+		Tools:              cj.Tools,
+		MCPServers:         cj.MCPServers,
+		BaseURL:            cj.BaseURL,
+		CheckpointInterval: cj.CheckpointInterval,
+		SummarizeThreshold:  cj.SummarizeThreshold,
+		SummarizeKeepRecent: cj.SummarizeKeepRecent,
+	}
+	if cj.DisableReflection != nil {
+		cfg.DisableReflection = *cj.DisableReflection
+		cfg.disableReflectionSet = true
+	}
+	if cj.DisableVerification != nil {
+		cfg.DisableVerification = *cj.DisableVerification
+		cfg.disableVerificationSet = true
+	}
+	return cfg
+}
+
 func loadFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	var cj configJSON
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return &cfg, nil
+	return cj.toConfig(), nil
 }
 
 func merge(base, overlay *Config) *Config {
@@ -134,10 +182,10 @@ func merge(base, overlay *Config) *Config {
 			base.MCPServers[k] = v
 		}
 	}
-	if overlay.DisableReflection {
+	if overlay.disableReflectionSet {
 		base.DisableReflection = overlay.DisableReflection
 	}
-	if overlay.DisableVerification {
+	if overlay.disableVerificationSet {
 		base.DisableVerification = overlay.DisableVerification
 	}
 	if overlay.CheckpointInterval != 0 {

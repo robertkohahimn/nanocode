@@ -272,7 +272,9 @@ func (a *Anthropic) buildRequestBody(req *Request) ([]byte, error) {
 				})
 			}
 		}
-		messages = append(messages, am)
+		if len(am.Content) > 0 {
+			messages = append(messages, am)
+		}
 	}
 
 	type apiTool struct {

@@ -86,6 +86,9 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 					fmt.Fprintf(os.Stderr, "\033[32mAuto-approved:\033[0m %s\n", cmd)
 					return true
 				}
+				if origConfirm == nil {
+					return false
+				}
 				return origConfirm(cmd)
 			}
 		}

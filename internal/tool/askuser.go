@@ -130,7 +130,7 @@ func (t *AskUserQuestionTool) askWithOptions(reader *bufio.Reader, question stri
 			fmt.Fprintf(os.Stderr, "  Type your response: ")
 			custom, readErr := reader.ReadString('\n')
 			if readErr != nil {
-				return "", true
+				return "", false
 			}
 			return strings.TrimSpace(custom), true
 		}

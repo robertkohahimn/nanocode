@@ -108,6 +108,10 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 	var runErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
+			// Close the previous engine before creating a new one.
+			if closer, ok := eng.(io.Closer); ok {
+				closer.Close()
+			}
 			backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
 			select {
 			case <-time.After(backoff):
@@ -122,9 +126,6 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 				result.Error = fmt.Sprintf("creating engine for retry: %v", err)
 				result.DurationMs = time.Since(start).Milliseconds()
 				return result
-			}
-			if closer, ok := eng.(io.Closer); ok {
-				defer closer.Close()
 			}
 		}
 		records, runErr = eng.Run(ctx, task.Prompt)

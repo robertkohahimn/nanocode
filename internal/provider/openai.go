@@ -259,14 +259,17 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 
 		var textParts []string
 		for _, cb := range m.Content {
-			if cb.Type == "text" {
+			if cb.Type == "text" && cb.Text != "" {
 				textParts = append(textParts, cb.Text)
 			}
 		}
-		messages = append(messages, map[string]string{
-			"role":    string(m.Role),
-			"content": strings.Join(textParts, "\n"),
-		})
+		content := strings.Join(textParts, "\n")
+		if content != "" {
+			messages = append(messages, map[string]string{
+				"role":    string(m.Role),
+				"content": content,
+			})
+		}
 	}
 
 	type funcDef struct {

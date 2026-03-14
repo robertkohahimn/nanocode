@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
 )
@@ -97,7 +98,12 @@ func (s *Summarizer) generateSummary(ctx context.Context, messages []provider.Me
 
 	input := sb.String()
 	if len(input) > maxSummaryInput {
-		input = input[:maxSummaryInput] + "\n... (truncated)"
+		// Truncate at a rune boundary to avoid splitting multi-byte UTF-8.
+		cut := maxSummaryInput
+		for cut > 0 && !utf8.RuneStart(input[cut]) {
+			cut--
+		}
+		input = input[:cut] + "\n... (truncated)"
 	}
 
 	req := &provider.Request{

@@ -148,6 +148,9 @@ func (t *MCPTool) Execute(ctx context.Context, input json.RawMessage) (string, e
 	text := strings.Join(parts, "\n")
 
 	if result.IsError {
+		if text == "" {
+			text = "(no error details returned)"
+		}
 		return "", fmt.Errorf("mcp tool error: %s", text)
 	}
 	return text, nil

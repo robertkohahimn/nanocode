@@ -3,11 +3,14 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+var ErrFailureNotFound = errors.New("failure not found")
 
 // FailureRecord captures a single failure event.
 type FailureRecord struct {
@@ -86,7 +89,10 @@ func (s *SQLiteStore) ListFailures(ctx context.Context, since int64, limit int) 
 		}
 		records = append(records, r)
 	}
-	return records, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating failures: %w", err)
+	}
+	return records, nil
 }
 
 func (s *SQLiteStore) GetFailure(ctx context.Context, id string) (*FailureRecord, error) {
@@ -112,10 +118,10 @@ func (s *SQLiteStore) AnnotateFailure(ctx context.Context, id string, failureTyp
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("checking rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("failure %s not found", id)
+		return fmt.Errorf("failure %s: %w", id, ErrFailureNotFound)
 	}
 	return nil
 }
