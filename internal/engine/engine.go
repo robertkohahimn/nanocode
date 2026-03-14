@@ -287,6 +287,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	verifyState := &VerifyState{}
 
 	checkpoint := NewCheckpointInjector(cfg.CheckpointInterval)
+	summarizer := NewSummarizer(e.provider, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent)
 
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
@@ -301,9 +302,18 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			})
 		}
 
-		windowed := windowMessages(messages, maxContextMessages)
-		if len(windowed) < len(messages) {
-			logger.LogContextWindow(len(messages), len(windowed))
+		// Summarize if enabled, then apply windowing as safety net.
+		summarized, sumErr := summarizer.MaybeSummarize(ctx, messages)
+		if sumErr != nil {
+			log.Printf("engine: summarization error: %v", sumErr)
+			summarized = messages
+		}
+		if len(summarized) < len(messages) {
+			logger.LogSummarization(len(messages), len(summarized))
+		}
+		windowed := windowMessages(summarized, maxContextMessages)
+		if len(windowed) < len(summarized) {
+			logger.LogContextWindow(len(summarized), len(windowed))
 		}
 
 		req := &provider.Request{
