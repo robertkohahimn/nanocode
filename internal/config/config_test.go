@@ -134,7 +134,7 @@ func TestMergeDisableReflection(t *testing.T) {
 		t.Fatal("default DisableReflection should be false")
 	}
 
-	overlay := &Config{DisableReflection: true}
+	overlay := &Config{DisableReflection: true, disableReflectionSet: true}
 	result := merge(base, overlay)
 	if !result.DisableReflection {
 		t.Error("expected DisableReflection=true after merge with overlay that sets it")

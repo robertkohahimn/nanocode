@@ -171,5 +171,8 @@ func searchFile(absPath, displayPath string, re *regexp.Regexp, maxResults int) 
 			results = append(results, fmt.Sprintf("%s:%d:%s", displayPath, lineNum, line))
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		results = append(results, fmt.Sprintf("%s: scan error: %v", displayPath, err))
+	}
 	return results
 }

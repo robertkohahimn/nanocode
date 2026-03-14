@@ -62,6 +62,7 @@ func loadMCPTools(cfg *config.Config) ([]tool.Tool, []io.Closer) {
 				continue
 			}
 			mcpTools = client.Tools(name+"_", tools)
+			clients = append(clients, client)
 		default:
 			log.Printf("mcp: unknown transport %q for server %s", serverCfg.Transport, name)
 			continue

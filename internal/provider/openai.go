@@ -198,6 +198,7 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 		}
 
 		if hasToolResults {
+			var textParts []string
 			for _, cb := range m.Content {
 				if cb.Type == "tool_result" && cb.ToolResult != nil {
 					messages = append(messages, map[string]string{
@@ -205,7 +206,15 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 						"tool_call_id": cb.ToolResult.ToolCallID,
 						"content":      cb.ToolResult.Content,
 					})
+				} else if cb.Type == "text" && cb.Text != "" {
+					textParts = append(textParts, cb.Text)
 				}
+			}
+			if len(textParts) > 0 {
+				messages = append(messages, map[string]string{
+					"role":    "user",
+					"content": strings.Join(textParts, "\n"),
+				})
 			}
 			continue
 		}
@@ -250,14 +259,17 @@ func (o *OpenAI) buildRequestBody(req *Request) ([]byte, error) {
 
 		var textParts []string
 		for _, cb := range m.Content {
-			if cb.Type == "text" {
+			if cb.Type == "text" && cb.Text != "" {
 				textParts = append(textParts, cb.Text)
 			}
 		}
-		messages = append(messages, map[string]string{
-			"role":    string(m.Role),
-			"content": strings.Join(textParts, "\n"),
-		})
+		content := strings.Join(textParts, "\n")
+		if content != "" {
+			messages = append(messages, map[string]string{
+				"role":    string(m.Role),
+				"content": content,
+			})
+		}
 	}
 
 	type funcDef struct {

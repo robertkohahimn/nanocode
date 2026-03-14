@@ -109,11 +109,14 @@ func (t *TaskUpdateTool) Execute(ctx context.Context, input json.RawMessage) (st
 
 	// Verify task belongs to current session
 	sessionID := t.GetSessionID()
+	if sessionID == "" {
+		return "", fmt.Errorf("no active session")
+	}
 	task, err := t.Store.GetTask(ctx, in.ID)
 	if err != nil {
-		return "", fmt.Errorf("task not found: %s", in.ID)
+		return "", fmt.Errorf("getting task %s: %w", in.ID, err)
 	}
-	if sessionID != "" && task.SessionID != sessionID {
+	if task.SessionID != sessionID {
 		return "", fmt.Errorf("task %s not found", in.ID)
 	}
 
@@ -251,14 +254,17 @@ func (t *TaskGetTool) Execute(ctx context.Context, input json.RawMessage) (strin
 		return "", fmt.Errorf("id is required")
 	}
 
-	task, err := t.Store.GetTask(ctx, in.ID)
-	if err != nil {
-		return "", fmt.Errorf("getting task: %w", err)
-	}
-
 	// Verify the task belongs to the caller's session
 	sessionID := t.GetSessionID()
-	if sessionID != "" && task.SessionID != sessionID {
+	if sessionID == "" {
+		return "", fmt.Errorf("no active session")
+	}
+
+	task, err := t.Store.GetTask(ctx, in.ID)
+	if err != nil {
+		return "", fmt.Errorf("getting task %s: %w", in.ID, err)
+	}
+	if task.SessionID != sessionID {
 		return "", fmt.Errorf("task %s not found", in.ID)
 	}
 

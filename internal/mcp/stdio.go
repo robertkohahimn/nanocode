@@ -134,10 +134,11 @@ func (c *StdioClient) Initialize(ctx context.Context) error {
 
 // ListTools discovers all tools from the MCP server, handling cursor pagination.
 func (c *StdioClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
+	const maxPages = 100
 	var allTools []ToolInfo
 	var cursor string
 
-	for {
+	for page := 0; page < maxPages; page++ {
 		var params interface{}
 		if cursor != "" {
 			params = ListToolsParams{Cursor: cursor}
@@ -155,10 +156,13 @@ func (c *StdioClient) ListTools(ctx context.Context) ([]ToolInfo, error) {
 
 		allTools = append(allTools, result.Tools...)
 
-		if result.NextCursor == "" {
+		cursor = result.NextCursor
+		if cursor == "" {
 			break
 		}
-		cursor = result.NextCursor
+	}
+	if cursor != "" {
+		return nil, fmt.Errorf("mcp tools/list: exceeded %d pages", maxPages)
 	}
 
 	return allTools, nil

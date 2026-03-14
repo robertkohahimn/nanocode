@@ -61,6 +61,20 @@ type sessionEndEntry struct {
 	TotalDurationMs int64 `json:"total_duration_ms"`
 }
 
+// checkpointEntry records a checkpoint injection.
+type checkpointEntry struct {
+	baseEntry
+	Iteration int    `json:"iteration"`
+	Level     string `json:"level"`
+}
+
+// summarizationEntry records a context summarization event.
+type summarizationEntry struct {
+	baseEntry
+	OriginalMessages int `json:"original_messages"`
+	ResultMessages   int `json:"result_messages"`
+}
+
 // base returns a baseEntry populated with the entry type, session ID, and current timestamp.
 func (l *EngineLogger) base(entryType string) baseEntry {
 	return baseEntry{
@@ -142,5 +156,29 @@ func (l *EngineLogger) LogSessionEnd(iterations int, totalDuration time.Duration
 		baseEntry:       l.base("session_end"),
 		Iterations:      iterations,
 		TotalDurationMs: totalDuration.Milliseconds(),
+	})
+}
+
+// LogCheckpoint records a checkpoint injection.
+func (l *EngineLogger) LogCheckpoint(iteration int, level string) {
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(checkpointEntry{
+		baseEntry: l.base("checkpoint"),
+		Iteration: iteration,
+		Level:     level,
+	})
+}
+
+// LogSummarization records a context summarization event.
+func (l *EngineLogger) LogSummarization(originalMessages, resultMessages int) {
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(summarizationEntry{
+		baseEntry:        l.base("summarization"),
+		OriginalMessages: originalMessages,
+		ResultMessages:   resultMessages,
 	})
 }

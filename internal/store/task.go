@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -80,8 +82,11 @@ func (s *SQLiteStore) GetTask(ctx context.Context, id string) (*Task, error) {
 	err := s.db.QueryRowContext(ctx,
 		"SELECT id, session_id, subject, description, status, created_at, updated_at FROM tasks WHERE id = ?", id,
 	).Scan(&task.ID, &task.SessionID, &task.Subject, &task.Description, &task.Status, &task.CreatedAt, &task.UpdatedAt)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("task not found: %s", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting task %s: %w", id, err)
 	}
 
 	// Load dependencies

@@ -18,10 +18,15 @@ type Manager struct {
 	store      store.Store
 	sessionID  string
 	mu         sync.Mutex
+	trackMu    sync.Mutex // serializes git add/commit/rev-parse
 }
 
 // New creates a snapshot manager. Call SetSession before Track will do anything.
+// Panics if st is nil.
 func New(projectDir string, st store.Store) *Manager {
+	if st == nil {
+		panic("snapshot.New: store must not be nil")
+	}
 	return &Manager{
 		projectDir: projectDir,
 		store:      st,
@@ -41,11 +46,17 @@ func (m *Manager) SetSession(id string) {
 // if any git operation fails.
 func (m *Manager) Track(filePath string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	sessionID := m.sessionID
+	projectDir := m.projectDir
+	st := m.store
+	m.mu.Unlock()
 
-	if m.sessionID == "" {
+	if sessionID == "" {
 		return
 	}
+
+	m.trackMu.Lock()
+	defer m.trackMu.Unlock()
 
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -54,14 +65,14 @@ func (m *Manager) Track(filePath string) {
 	}
 
 	filename := filepath.Base(absPath)
-	prefix := m.sessionID
+	prefix := sessionID
 	if len(prefix) > 8 {
 		prefix = prefix[:8]
 	}
 
 	// Stage the file
 	addCmd := exec.Command("git", "add", "--", absPath)
-	addCmd.Dir = m.projectDir
+	addCmd.Dir = projectDir
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		log.Printf("snapshot: git add: %s %v", strings.TrimSpace(string(out)), err)
 		return
@@ -70,7 +81,7 @@ func (m *Manager) Track(filePath string) {
 	// Commit with direct exec to avoid shell injection via filename
 	msg := fmt.Sprintf("nanocode: %s [session:%s]", filename, prefix)
 	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = m.projectDir
+	commitCmd.Dir = projectDir
 	out, err := commitCmd.CombinedOutput()
 	if err != nil {
 		// "nothing to commit" is not an error we care about
@@ -83,7 +94,7 @@ func (m *Manager) Track(filePath string) {
 
 	// Get commit hash
 	hashCmd := exec.Command("git", "rev-parse", "HEAD")
-	hashCmd.Dir = m.projectDir
+	hashCmd.Dir = projectDir
 	hashOut, err := hashCmd.Output()
 	if err != nil {
 		log.Printf("snapshot: git rev-parse: %v", err)
@@ -97,11 +108,11 @@ func (m *Manager) Track(filePath string) {
 
 	// Store snapshot record (fire-and-forget, use background context)
 	snap := &store.SnapshotRecord{
-		SessionID: m.sessionID,
+		SessionID: sessionID,
 		FilePath:  absPath,
 		GitHash:   gitHash,
 	}
-	if err := m.store.CreateSnapshot(context.Background(), snap); err != nil {
+	if err := st.CreateSnapshot(context.Background(), snap); err != nil {
 		log.Printf("snapshot: store: %v", err)
 	}
 }

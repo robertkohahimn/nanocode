@@ -54,7 +54,6 @@ func matchGlob(pattern, text string) bool {
 }
 
 // wrapperCommands can execute arbitrary commands as arguments and bypass validation.
-// wrapperCommands can execute arbitrary commands as arguments and bypass validation.
 var wrapperCommands = map[string]bool{
 	"bash":     true, // can execute scripts or commands
 	"sh":       true, // can execute scripts or commands

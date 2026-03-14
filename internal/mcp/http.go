@@ -71,7 +71,10 @@ func (c *HTTPClient) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mcp http notifications/initialized: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("mcp http notifications/initialized: unexpected status %d", resp.StatusCode)
 	}
@@ -209,6 +212,12 @@ func (c *HTTPClient) Tools(prefix string, tools []ToolInfo) []tool.Tool {
 	return MakeMCPTools(tools, c.Call, prefix)
 }
 
+// Close implements io.Closer. It closes idle connections on the underlying HTTP client.
+func (c *HTTPClient) Close() error {
+	c.httpClient.CloseIdleConnections()
+	return nil
+}
+
 func (c *HTTPClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -221,7 +230,6 @@ func (c *HTTPClient) setHeaders(req *http.Request) {
 
 // simpleSSEReader is a minimal SSE parser for the HTTP transport.
 type simpleSSEReader struct {
-	dec *json.Decoder // reuse buffered reader under the hood
 	raw io.Reader
 	buf []byte
 }

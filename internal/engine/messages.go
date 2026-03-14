@@ -6,10 +6,10 @@ import (
 	"github.com/robertkohahimn/nanocode/internal/provider"
 )
 
-// windowMessages prevents context overflow by keeping the first message
-// (original user prompt) and the last maxN messages. It adjusts the cut
-// point to avoid splitting tool_use/tool_result pairs, which would cause
-// API errors from both Anthropic and OpenAI.
+// windowMessages prevents context overflow by keeping at most maxN messages
+// total: the first message (original user prompt) plus the last maxN-1
+// messages. It adjusts the cut point to avoid splitting tool_use/tool_result
+// pairs, which would cause API errors from both Anthropic and OpenAI.
 func windowMessages(msgs []provider.Message, maxN int) []provider.Message {
 	if maxN <= 0 || len(msgs) <= maxN {
 		return msgs
