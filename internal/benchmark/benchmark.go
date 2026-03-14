@@ -98,10 +98,12 @@ func (r *Runner) RunTask(ctx context.Context, task Task) Result {
 		result.Error = fmt.Sprintf("creating engine: %v", err)
 		return result
 	}
-	// Close the engine after use if it implements io.Closer
-	if closer, ok := eng.(io.Closer); ok {
-		defer closer.Close()
-	}
+	// Close whichever engine is current when the function returns.
+	defer func() {
+		if closer, ok := eng.(io.Closer); ok {
+			closer.Close()
+		}
+	}()
 
 	start := time.Now()
 	var records []ToolCallRecord

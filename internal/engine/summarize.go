@@ -87,7 +87,11 @@ func (s *Summarizer) generateSummary(ctx context.Context, messages []provider.Me
 				if cb.ToolResult != nil {
 					content := cb.ToolResult.Content
 					if len(content) > 500 {
-						content = content[:500] + "..."
+						cut := 500
+						for cut > 0 && !utf8.RuneStart(content[cut]) {
+							cut--
+						}
+						content = content[:cut] + "..."
 					}
 					sb.WriteString(content)
 				}
