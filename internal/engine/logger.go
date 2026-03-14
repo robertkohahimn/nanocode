@@ -68,6 +68,13 @@ type checkpointEntry struct {
 	Level     string `json:"level"`
 }
 
+// summarizationEntry records a context summarization event.
+type summarizationEntry struct {
+	baseEntry
+	OriginalMessages int `json:"original_messages"`
+	ResultMessages   int `json:"result_messages"`
+}
+
 // base returns a baseEntry populated with the entry type, session ID, and current timestamp.
 func (l *EngineLogger) base(entryType string) baseEntry {
 	return baseEntry{
@@ -161,5 +168,17 @@ func (l *EngineLogger) LogCheckpoint(iteration int, level string) {
 		baseEntry: l.base("checkpoint"),
 		Iteration: iteration,
 		Level:     level,
+	})
+}
+
+// LogSummarization records a context summarization event.
+func (l *EngineLogger) LogSummarization(originalMessages, resultMessages int) {
+	if l == nil || l.w == nil {
+		return
+	}
+	l.emit(summarizationEntry{
+		baseEntry:        l.base("summarization"),
+		OriginalMessages: originalMessages,
+		ResultMessages:   resultMessages,
 	})
 }
