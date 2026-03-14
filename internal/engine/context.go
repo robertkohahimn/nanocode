@@ -67,8 +67,8 @@ func BuildProjectContext(projectDir string) string {
 	// Project instructions (nanocode.md)
 	nanocodePath := filepath.Join(projectDir, "nanocode.md")
 	if f, err := os.Open(nanocodePath); err == nil {
+		defer f.Close()
 		data, readErr := io.ReadAll(io.LimitReader(f, maxProjectCtx+1))
-		f.Close()
 		if readErr == nil && len(data) > 0 {
 			content := string(data)
 			if len(data) > maxProjectCtx {

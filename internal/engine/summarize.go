@@ -30,7 +30,7 @@ type Summarizer struct {
 
 // NewSummarizer creates a Summarizer. If threshold is 0, summarization is disabled.
 func NewSummarizer(p provider.Provider, model string, threshold, keepN int) *Summarizer {
-	if keepN <= 0 {
+	if keepN < 0 {
 		keepN = 10
 	}
 	return &Summarizer{provider: p, model: model, threshold: threshold, keepN: keepN}
@@ -59,6 +59,9 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, messages []provider.Mes
 				break
 			}
 		}
+	}
+	if cutPoint <= 1 {
+		return messages, nil
 	}
 	middle := messages[1:cutPoint]
 	recent := messages[cutPoint:]
