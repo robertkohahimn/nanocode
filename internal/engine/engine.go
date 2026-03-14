@@ -265,20 +265,8 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 		system = DefaultSystemPrompt()
 	}
 
-	// Auto-read project context file (nanocode.md) if it exists (bounded to 1MB).
-	if cfg.ProjectDir != "" {
-		if f, err := os.Open(filepath.Join(cfg.ProjectDir, "nanocode.md")); err == nil {
-			const maxProjectCtx = 1 << 20 // 1MB
-			data, readErr := io.ReadAll(io.LimitReader(f, maxProjectCtx+1))
-			f.Close()
-			if readErr == nil && len(data) > 0 {
-				content := string(data)
-				if len(data) > maxProjectCtx {
-					content = content[:maxProjectCtx] + "\n... (truncated at 1MB)"
-				}
-				system += "\n\n# Project Context\n\n" + content
-			}
-		}
+	if projectCtx := BuildProjectContext(cfg.ProjectDir); projectCtx != "" {
+		system += "\n\n# Project Context\n\n" + projectCtx
 	}
 
 	// Structured logging for engine decisions
