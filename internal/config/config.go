@@ -30,10 +30,13 @@ type Config struct {
 	SummarizeThreshold  int `json:"summarizeThreshold"`  // 0 = disabled (use windowing)
 	SummarizeKeepRecent int `json:"summarizeKeepRecent"` // messages to keep unsummarized
 
-	// These track whether boolean fields were explicitly set in config JSON,
-	// allowing merge to distinguish "not set" from "set to false".
-	disableReflectionSet   bool
-	disableVerificationSet bool
+	// These track whether fields were explicitly set in config JSON,
+	// allowing merge to distinguish "not set" from "set to zero/false".
+	disableReflectionSet    bool
+	disableVerificationSet  bool
+	checkpointIntervalSet   bool
+	summarizeThresholdSet   bool
+	summarizeKeepRecentSet  bool
 }
 
 type ToolConfig struct {
@@ -103,26 +106,23 @@ type configJSON struct {
 	Tools               map[string]ToolConfig      `json:"tools"`
 	MCPServers          map[string]MCPServerConfig `json:"mcpServers"`
 	BaseURL             string                     `json:"baseURL"`
-	DisableReflection   *bool                      `json:"disableReflection"`
-	DisableVerification *bool                      `json:"disableVerification"`
-	CheckpointInterval  int                        `json:"checkpointInterval"`
-	SummarizeThreshold  int                        `json:"summarizeThreshold"`
-	SummarizeKeepRecent int                        `json:"summarizeKeepRecent"`
+	DisableReflection   *bool `json:"disableReflection"`
+	DisableVerification *bool `json:"disableVerification"`
+	CheckpointInterval  *int  `json:"checkpointInterval"`
+	SummarizeThreshold  *int  `json:"summarizeThreshold"`
+	SummarizeKeepRecent *int  `json:"summarizeKeepRecent"`
 }
 
 func (cj *configJSON) toConfig() *Config {
 	cfg := &Config{
-		Provider:           cj.Provider,
-		Model:              cj.Model,
-		APIKey:             cj.APIKey,
-		MaxTokens:          cj.MaxTokens,
-		System:             cj.System,
-		Tools:              cj.Tools,
-		MCPServers:         cj.MCPServers,
-		BaseURL:            cj.BaseURL,
-		CheckpointInterval: cj.CheckpointInterval,
-		SummarizeThreshold:  cj.SummarizeThreshold,
-		SummarizeKeepRecent: cj.SummarizeKeepRecent,
+		Provider:   cj.Provider,
+		Model:      cj.Model,
+		APIKey:     cj.APIKey,
+		MaxTokens:  cj.MaxTokens,
+		System:     cj.System,
+		Tools:      cj.Tools,
+		MCPServers: cj.MCPServers,
+		BaseURL:    cj.BaseURL,
 	}
 	if cj.DisableReflection != nil {
 		cfg.DisableReflection = *cj.DisableReflection
@@ -131,6 +131,18 @@ func (cj *configJSON) toConfig() *Config {
 	if cj.DisableVerification != nil {
 		cfg.DisableVerification = *cj.DisableVerification
 		cfg.disableVerificationSet = true
+	}
+	if cj.CheckpointInterval != nil {
+		cfg.CheckpointInterval = *cj.CheckpointInterval
+		cfg.checkpointIntervalSet = true
+	}
+	if cj.SummarizeThreshold != nil {
+		cfg.SummarizeThreshold = *cj.SummarizeThreshold
+		cfg.summarizeThresholdSet = true
+	}
+	if cj.SummarizeKeepRecent != nil {
+		cfg.SummarizeKeepRecent = *cj.SummarizeKeepRecent
+		cfg.summarizeKeepRecentSet = true
 	}
 	return cfg
 }
@@ -188,13 +200,13 @@ func merge(base, overlay *Config) *Config {
 	if overlay.disableVerificationSet {
 		base.DisableVerification = overlay.DisableVerification
 	}
-	if overlay.CheckpointInterval != 0 {
+	if overlay.checkpointIntervalSet {
 		base.CheckpointInterval = overlay.CheckpointInterval
 	}
-	if overlay.SummarizeThreshold != 0 {
+	if overlay.summarizeThresholdSet {
 		base.SummarizeThreshold = overlay.SummarizeThreshold
 	}
-	if overlay.SummarizeKeepRecent != 0 {
+	if overlay.summarizeKeepRecentSet {
 		base.SummarizeKeepRecent = overlay.SummarizeKeepRecent
 	}
 	return base

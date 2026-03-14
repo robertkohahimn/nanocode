@@ -54,13 +54,22 @@ func (v *VerifyState) ReminderText() string {
 	)
 }
 
-// isCommandDelimiter returns true if the byte is a valid shell delimiter
-// that can follow a command name (space, semicolon, pipe, ampersand).
+// isCommandDelimiter returns true if the byte is a whitespace argument
+// separator. Shell metacharacters (;, |, &) are excluded to prevent
+// command chaining from bypassing verification (e.g. "go test; rm -rf /").
 func isCommandDelimiter(b byte) bool {
-	return b == ' ' || b == ';' || b == '|' || b == '&'
+	return b == ' ' || b == '\n' || b == '\t'
+}
+
+// containsChainOperator returns true if the command string contains shell
+// chaining operators (;, |, &, &&, ||) that could allow command injection.
+func containsChainOperator(cmd string) bool {
+	return strings.ContainsAny(cmd, ";|&")
 }
 
 // IsVerifyCommand checks if a bash command is a verification command.
+// Commands containing shell chaining operators are rejected to prevent
+// bypassing verification (e.g. "go test; rm -rf /").
 func IsVerifyCommand(cmd string) bool {
 	verifyPatterns := []string{
 		"go test", "go build", "go vet",
@@ -74,6 +83,9 @@ func IsVerifyCommand(cmd string) bool {
 		"mix test",
 	}
 	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if containsChainOperator(lower) {
+		return false
+	}
 	for _, p := range verifyPatterns {
 		if strings.HasPrefix(lower, p) && (len(lower) == len(p) || isCommandDelimiter(lower[len(p)])) {
 			return true

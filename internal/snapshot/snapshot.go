@@ -18,6 +18,7 @@ type Manager struct {
 	store      store.Store
 	sessionID  string
 	mu         sync.Mutex
+	trackMu    sync.Mutex // serializes git add/commit/rev-parse
 }
 
 // New creates a snapshot manager. Call SetSession before Track will do anything.
@@ -53,6 +54,9 @@ func (m *Manager) Track(filePath string) {
 	if sessionID == "" {
 		return
 	}
+
+	m.trackMu.Lock()
+	defer m.trackMu.Unlock()
 
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {

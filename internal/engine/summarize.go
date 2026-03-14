@@ -48,8 +48,20 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, messages []provider.Mes
 	if keepN >= len(messages)-1 {
 		return messages, nil
 	}
-	middle := messages[1 : len(messages)-keepN]
-	recent := messages[len(messages)-keepN:]
+	cutPoint := len(messages) - keepN
+	// If the cut point lands on a tool_result message, move it back by 1
+	// to include the matching assistant tool_use message.
+	if cutPoint > 1 {
+		msg := messages[cutPoint]
+		for _, cb := range msg.Content {
+			if cb.Type == "tool_result" {
+				cutPoint--
+				break
+			}
+		}
+	}
+	middle := messages[1:cutPoint]
+	recent := messages[cutPoint:]
 
 	summary, err := s.generateSummary(ctx, middle)
 	if err != nil {
