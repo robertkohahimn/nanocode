@@ -26,6 +26,7 @@ type Config struct {
 	LogWriter         io.Writer `json:"-"`                  // structured log output (nil = no logging)
 	DisableSnapshot      bool      `json:"-"`                     // internal-only, not serialized
 	DisableVerification  bool      `json:"disableVerification"`   // skip verification reminders
+	CheckpointInterval   int       `json:"checkpointInterval"`    // 0 = disabled
 }
 
 type ToolConfig struct {
@@ -136,6 +137,9 @@ func merge(base, overlay *Config) *Config {
 	}
 	if overlay.DisableVerification {
 		base.DisableVerification = overlay.DisableVerification
+	}
+	if overlay.CheckpointInterval != 0 {
+		base.CheckpointInterval = overlay.CheckpointInterval
 	}
 	return base
 }
