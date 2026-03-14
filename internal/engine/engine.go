@@ -298,9 +298,19 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	// Track verification state for edit-then-verify enforcement.
 	verifyState := &VerifyState{}
 
+	checkpoint := NewCheckpointInjector(cfg.CheckpointInterval)
+
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+
+		if cb, level := checkpoint.MaybeInject(iterations); cb != nil {
+			logger.LogCheckpoint(iterations, level)
+			messages = append(messages, provider.Message{
+				Role:    provider.RoleUser,
+				Content: []provider.ContentBlock{*cb},
+			})
 		}
 
 		windowed := windowMessages(messages, maxContextMessages)
