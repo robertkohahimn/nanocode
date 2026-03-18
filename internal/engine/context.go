@@ -13,6 +13,15 @@ import (
 	"unicode/utf8"
 )
 
+// escapeXML replaces characters that could break XML/HTML tag structure
+// in untrusted data embedded within tags.
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
 const (
 	maxStatusLines = 20
 	gitTimeout     = 2 * time.Second
@@ -36,7 +45,7 @@ func BuildProjectContext(projectDir string) string {
 
 		if branch := gitCommand(projectDir, "branch", "--show-current"); branch != "" {
 			sb.WriteString("Current branch: ")
-			sb.WriteString(branch)
+			sb.WriteString(escapeXML(branch))
 			sb.WriteString("\n\n")
 		}
 
@@ -46,13 +55,13 @@ func BuildProjectContext(projectDir string) string {
 				lines = append(lines[:maxStatusLines], fmt.Sprintf("... (%d more)", len(lines)-maxStatusLines))
 			}
 			sb.WriteString("Status:\n")
-			sb.WriteString(strings.Join(lines, "\n"))
+			sb.WriteString(escapeXML(strings.Join(lines, "\n")))
 			sb.WriteString("\n\n")
 		}
 
 		if commits := gitCommand(projectDir, "log", "--oneline", "-5"); commits != "" {
 			sb.WriteString("Recent commits:\n")
-			sb.WriteString(commits)
+			sb.WriteString(escapeXML(commits))
 			sb.WriteString("\n\n")
 		}
 

@@ -39,7 +39,11 @@ func run() error {
 		return runFailures(ctx, os.Args[2:])
 	}
 
-	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm, logPath := parseArgs(os.Args[1:])
+	prompt, sessionID, listMode, strictMode, modelOverride, autoConfirm, logPath, showHelp := parseArgs(os.Args[1:])
+	if showHelp {
+		printUsage()
+		return nil
+	}
 	if autoConfirm {
 		fmt.Fprintln(os.Stderr, "⚠️  Auto-confirm enabled: all shell commands will run without confirmation")
 	}
@@ -174,7 +178,25 @@ func run() error {
 	}
 }
 
-func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string, autoConfirm bool, logPath string) {
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `Usage: nanocode [OPTIONS] [PROMPT]
+
+Options:
+  --session ID    Resume a previous session by ID
+  --list          List recent sessions
+  --model NAME    Override the configured model
+  --log PATH      Write structured JSON logs (use - or stderr for stderr)
+  --strict        Enable strict mode
+  --yes, -y       Auto-confirm all shell commands
+  --help, -h      Show this help message
+
+Subcommands:
+  benchmark       Run benchmark tasks
+  failures        Manage failure records (list, show, annotate)
+`)
+}
+
+func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bool, modelOverride string, autoConfirm bool, logPath string, showHelp bool) {
 	var parts []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -221,6 +243,9 @@ func parseArgs(args []string) (prompt, sessionID string, listMode, strictMode bo
 			}
 		case "--yes", "-y":
 			autoConfirm = true
+		case "--help", "-h":
+			showHelp = true
+			return
 		default:
 			parts = append(parts, args[i])
 		}
