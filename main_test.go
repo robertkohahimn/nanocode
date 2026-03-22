@@ -49,7 +49,7 @@ func TestParseArgsYesFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompt, _, _, _, _, autoConfirm, _ := parseArgs(tt.args)
+			prompt, _, _, _, _, autoConfirm, _, _ := parseArgs(tt.args)
 			if autoConfirm != tt.wantConfirm {
 				t.Errorf("autoConfirm = %v, want %v", autoConfirm, tt.wantConfirm)
 			}
@@ -57,6 +57,22 @@ func TestParseArgsYesFlag(t *testing.T) {
 				t.Errorf("prompt = %q, want %q", prompt, tt.wantPrompt)
 			}
 		})
+	}
+}
+
+func TestParseArgsHelpFlag(t *testing.T) {
+	for _, flag := range []string{"--help", "-h"} {
+		t.Run(flag, func(t *testing.T) {
+			_, _, _, _, _, _, _, showHelp := parseArgs([]string{flag})
+			if !showHelp {
+				t.Errorf("parseArgs(%q): showHelp = false, want true", flag)
+			}
+		})
+	}
+	// Verify --help doesn't set showHelp when not present
+	_, _, _, _, _, _, _, showHelp := parseArgs([]string{"hello"})
+	if showHelp {
+		t.Error("showHelp should be false when --help not passed")
 	}
 }
 
@@ -95,7 +111,7 @@ func TestParseArgsLogFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompt, _, _, _, _, _, logPath := parseArgs(tt.args)
+			prompt, _, _, _, _, _, logPath, _ := parseArgs(tt.args)
 			if logPath != tt.wantLog {
 				t.Errorf("logPath = %q, want %q", logPath, tt.wantLog)
 			}
