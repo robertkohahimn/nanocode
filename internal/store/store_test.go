@@ -134,3 +134,21 @@ func TestMigrateIdempotent(t *testing.T) {
 		t.Fatalf("second Migrate: %v", err)
 	}
 }
+
+func TestPersistSummary(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+	err := st.PersistSummary(ctx, sessionID, "Files were edited.", 30, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify it was persisted (query directly)
+	var count int
+	st.db.QueryRow("SELECT COUNT(*) FROM summaries WHERE session_id = ?", sessionID).Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 summary, got %d", count)
+	}
+}

@@ -83,6 +83,17 @@ var migrations = []string{
 	);
 	CREATE INDEX IF NOT EXISTS idx_failures_session ON failures(session_id);
 	CREATE INDEX IF NOT EXISTS idx_failures_timestamp ON failures(timestamp DESC);`,
+
+	// Version 6: summary persistence
+	`CREATE TABLE IF NOT EXISTS summaries (
+		id             TEXT PRIMARY KEY,
+		session_id     TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		summary_text   TEXT NOT NULL,
+		original_count INTEGER NOT NULL,
+		result_count   INTEGER NOT NULL,
+		created_at     INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_summaries_session ON summaries(session_id, created_at);`,
 }
 
 // Migrate ensures the database schema is up to date.
