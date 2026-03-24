@@ -65,6 +65,20 @@ func executeParallelBatch(ctx context.Context, reg *ToolRegistry, calls []*provi
 		go func(idx int, call *provider.ToolCall) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer func() {
+				if r := recover(); r != nil {
+					results[idx] = parallelResult{
+						ContentBlock: provider.ContentBlock{
+							Type: "tool_result",
+							ToolResult: &provider.ToolResult{
+								ToolCallID: call.ID,
+								Content:    fmt.Sprintf("tool panic: %v", r),
+								IsError:    true,
+							},
+						},
+					}
+				}
+			}()
 			start := time.Now()
 			result := reg.Execute(ctx, call)
 			results[idx] = parallelResult{
