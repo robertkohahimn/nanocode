@@ -52,6 +52,8 @@ type Engine struct {
 	bashTool         *tool.BashTool         // for batch confirmation
 	permChecker      *permission.Checker    // for batch confirmation (nil if no perm config)
 	stdinReader      *bufio.Reader          // for batch confirmation (nil in auto-confirm)
+	bgTasks          *tool.BackgroundTaskManager
+	bgCancel         context.CancelFunc
 }
 
 // New creates an Engine with the given dependencies.
@@ -66,6 +68,10 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 			return true
 		}
 	}
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgTasks := tool.NewBackgroundTaskManager(bgCtx)
+	bashTool.BackgroundTasks = bgTasks
 
 	// Permission system: wire allow/deny/autoApprove into bash confirm hook
 	var permChecker *permission.Checker
@@ -135,6 +141,8 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		bashTool:    bashTool,
 		permChecker: permChecker,
 		stdinReader: batchReader,
+		bgTasks:     bgTasks,
+		bgCancel:    bgCancel,
 	}
 
 	getSessionID := func() string { return eng.currentSessionID }
@@ -144,6 +152,7 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		&tool.TaskListTool{Store: s, GetSessionID: getSessionID},
 		&tool.TaskGetTool{Store: s, GetSessionID: getSessionID},
 	)
+	allTools = append(allTools, &tool.TaskOutputTool{Manager: bgTasks})
 
 	subagentTool := &tool.SubagentTool{Runner: eng}
 	allTools = append(allTools, subagentTool)
@@ -154,6 +163,12 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 
 // Close shuts down MCP subprocesses. Must be called on exit.
 func (e *Engine) Close() {
+	if e.bgCancel != nil {
+		e.bgCancel()
+	}
+	if e.bgTasks != nil {
+		e.bgTasks.Cleanup()
+	}
 	for _, c := range e.mcpClients {
 		c.Close()
 	}

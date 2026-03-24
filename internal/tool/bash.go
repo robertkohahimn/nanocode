@@ -18,6 +18,7 @@ type BashTool struct {
 	// ConfirmFunc is called before executing a command.
 	// Return true to allow execution. Default: interactive Y/n prompt on stderr.
 	ConfirmFunc      func(command string) bool
+	BackgroundTasks  *BackgroundTaskManager
 	stdinReader      *bufio.Reader
 	mu               sync.RWMutex // protects confirmOverrides
 	confirmOverrides map[string]bashOverride
@@ -25,8 +26,9 @@ type BashTool struct {
 }
 
 type BashInput struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"` // seconds
+	Command         string `json:"command"`
+	Timeout         int    `json:"timeout"` // seconds
+	RunInBackground bool   `json:"run_in_background"`
 }
 
 type bashOverride struct {
@@ -52,7 +54,8 @@ func (t *BashTool) Definition() provider.ToolDef {
 			"type": "object",
 			"properties": {
 				"command": {"type": "string", "description": "The shell command to execute"},
-				"timeout": {"type": "integer", "description": "Timeout in seconds (default: 30, max: 300)"}
+				"timeout": {"type": "integer", "description": "Timeout in seconds (default: 30, max: 300)"},
+				"run_in_background": {"type": "boolean", "description": "Run command in background, returns task ID immediately"}
 			},
 			"required": ["command"]
 		}`),
@@ -123,6 +126,17 @@ func (t *BashTool) executeCommand(ctx context.Context, in BashInput) (string, er
 	return TruncateOutput(result, MaxOutputLen), nil
 }
 
+func (t *BashTool) startBackground(in BashInput) (string, error) {
+	if t.BackgroundTasks == nil {
+		return "", fmt.Errorf("background execution not available in subagent mode")
+	}
+	taskID, err := t.BackgroundTasks.Start(in.Command, in.Timeout)
+	if err != nil {
+		return "", fmt.Errorf("starting background task: %w", err)
+	}
+	return fmt.Sprintf(`{"task_id": %q, "status": "running"}`, taskID), nil
+}
+
 func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	in, err := ParseInput[BashInput](input)
 	if err != nil {
@@ -149,6 +163,9 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 				if !override.approved {
 					return "Command rejected by user", nil
 				}
+				if in.RunInBackground {
+					return t.startBackground(in)
+				}
 				// approved: skip confirmation, proceed to execution
 				return t.executeCommand(ctx, in)
 			}
@@ -164,6 +181,9 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		return "Command rejected by user", nil
 	}
 
+	if in.RunInBackground {
+		return t.startBackground(in)
+	}
 	return t.executeCommand(ctx, in)
 }
 
