@@ -17,6 +17,8 @@ var readOnlyTools = map[string]bool{
 	"glob":        true,
 	"grep":        true,
 	"task_output": true,
+	"task_list":   true,
+	"task_get":    true,
 }
 
 type toolCallGroup struct {
