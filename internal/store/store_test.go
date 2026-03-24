@@ -147,7 +147,9 @@ func TestPersistSummary(t *testing.T) {
 
 	// Verify it was persisted (query directly)
 	var count int
-	st.db.QueryRow("SELECT COUNT(*) FROM summaries WHERE session_id = ?", sessionID).Scan(&count)
+	if err = st.db.QueryRow("SELECT COUNT(*) FROM summaries WHERE session_id = ?", sessionID).Scan(&count); err != nil {
+		t.Fatalf("querying summaries: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 summary, got %d", count)
 	}

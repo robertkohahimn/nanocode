@@ -35,10 +35,10 @@ func windowMessages(msgs []provider.Message, maxN int) []provider.Message {
 
 	tail := msgs[startIdx:]
 	// Cap to maxN total (first message + tail).
-	// Trim from the end rather than the front to preserve any tool_use/tool_result
-	// pair we backed up to include.
+	// Keep the most recent messages to maintain recency bias.
 	if 1+len(tail) > maxN {
-		tail = tail[:maxN-1]
+		keep := maxN - 1
+		tail = tail[len(tail)-keep:]
 	}
 	result := make([]provider.Message, 0, 1+len(tail))
 	result = append(result, msgs[0])

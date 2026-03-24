@@ -57,5 +57,8 @@ func (t *TaskOutputTool) Execute(ctx context.Context, input json.RawMessage) (st
 	exitCode := task.ExitCode
 	task.mu.Unlock()
 
+	if status == "running" {
+		return fmt.Sprintf("Status: %s\n\n%s", status, output), nil
+	}
 	return fmt.Sprintf("Status: %s\nExit code: %d\n\n%s", status, exitCode, output), nil
 }

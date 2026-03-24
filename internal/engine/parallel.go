@@ -13,9 +13,10 @@ import (
 )
 
 var readOnlyTools = map[string]bool{
-	"read": true,
-	"glob": true,
-	"grep": true,
+	"read":        true,
+	"glob":        true,
+	"grep":        true,
+	"task_output": true,
 }
 
 type toolCallGroup struct {
@@ -217,8 +218,11 @@ func executeSequentialTool(ctx context.Context, tec *toolExecContext, tc *provid
 			}
 		}
 		if tc.Name == "bash" {
-			var inp struct{ Command string `json:"command"` }
-			if json.Unmarshal(tc.Input, &inp) == nil && IsVerifyCommand(inp.Command) {
+			var inp struct {
+				Command         string `json:"command"`
+				RunInBackground bool   `json:"run_in_background"`
+			}
+			if json.Unmarshal(tc.Input, &inp) == nil && !inp.RunInBackground && IsVerifyCommand(inp.Command) {
 				tec.verifyState.MarkVerified()
 			}
 		}

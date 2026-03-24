@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,12 +51,12 @@ func (m *BackgroundTaskManager) Start(command string, timeout int) (string, erro
 	}
 
 	tmpDir := filepath.Join(os.TempDir(), "nanocode")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		return "", fmt.Errorf("creating temp dir: %w", err)
 	}
 
 	outPath := filepath.Join(tmpDir, id+".out")
-	outFile, err := os.Create(outPath)
+	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return "", fmt.Errorf("creating output file: %w", err)
 	}
@@ -125,11 +126,15 @@ func (m *BackgroundTaskManager) ReadOutput(id string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("background task not found: %s", id)
 	}
-	data, err := os.ReadFile(task.OutputPath)
+	f, err := os.Open(task.OutputPath)
 	if err != nil {
 		return "", fmt.Errorf("reading output: %w", err)
 	}
-	return TruncateOutput(string(data), MaxOutputLen), nil
+	defer f.Close()
+	// Read at most MaxOutputLen+margin to avoid loading arbitrarily large files.
+	buf := make([]byte, MaxOutputLen+64)
+	n, _ := io.ReadFull(f, buf)
+	return TruncateOutput(string(buf[:n]), MaxOutputLen), nil
 }
 
 // Cleanup cancels running tasks and removes temp files.

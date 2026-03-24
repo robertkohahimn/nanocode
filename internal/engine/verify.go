@@ -66,8 +66,18 @@ func isCommandDelimiter(b byte) bool {
 func containsChainOperator(cmd string) bool {
 	inSingle := false
 	inDouble := false
+	escaped := false
 	for i := 0; i < len(cmd); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
 		switch cmd[i] {
+		case '\\':
+			// Backslash escapes only apply outside single quotes
+			if !inSingle {
+				escaped = true
+			}
 		case '\'':
 			if !inDouble {
 				inSingle = !inSingle
