@@ -78,9 +78,9 @@ func (m *Manager) Track(filePath string) {
 		return
 	}
 
-	// Commit with direct exec to avoid shell injection via filename
+	// Commit only the staged file (--only) to avoid capturing unrelated staged changes
 	msg := fmt.Sprintf("nanocode: %s [session:%s]", filename, prefix)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
+	commitCmd := exec.Command("git", "commit", "-m", msg, "--only", "--", absPath)
 	commitCmd.Dir = projectDir
 	out, err := commitCmd.CombinedOutput()
 	if err != nil {

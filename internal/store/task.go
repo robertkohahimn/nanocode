@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -131,21 +132,33 @@ func (s *SQLiteStore) ListTasks(ctx context.Context, sessionID string) ([]Task, 
 		return nil, fmt.Errorf("iterating tasks: %w", err)
 	}
 
-	// Load dependencies for each task
-	for i := range tasks {
-		depRows, err := s.db.QueryContext(ctx, "SELECT blocked_by FROM task_deps WHERE task_id = ?", tasks[i].ID)
-		if err != nil {
-			return nil, fmt.Errorf("loading deps for task %s: %w", tasks[i].ID, err)
+	// Load all dependencies in a single query to avoid N+1
+	if len(tasks) > 0 {
+		taskIDs := make([]interface{}, len(tasks))
+		placeholders := make([]string, len(tasks))
+		taskIdx := make(map[string]int, len(tasks))
+		for i, t := range tasks {
+			taskIDs[i] = t.ID
+			placeholders[i] = "?"
+			taskIdx[t.ID] = i
 		}
+		depRows, err := s.db.QueryContext(ctx,
+			"SELECT task_id, blocked_by FROM task_deps WHERE task_id IN ("+strings.Join(placeholders, ",")+")",
+			taskIDs...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("loading task deps: %w", err)
+		}
+		defer depRows.Close()
 		for depRows.Next() {
-			var dep string
-			if err := depRows.Scan(&dep); err != nil {
-				depRows.Close()
+			var taskID, dep string
+			if err := depRows.Scan(&taskID, &dep); err != nil {
 				return nil, fmt.Errorf("scanning dep: %w", err)
 			}
-			tasks[i].BlockedBy = append(tasks[i].BlockedBy, dep)
+			if idx, ok := taskIdx[taskID]; ok {
+				tasks[idx].BlockedBy = append(tasks[idx].BlockedBy, dep)
+			}
 		}
-		depRows.Close()
 		if err := depRows.Err(); err != nil {
 			return nil, fmt.Errorf("iterating deps: %w", err)
 		}
