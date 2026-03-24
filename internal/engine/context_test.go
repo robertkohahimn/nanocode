@@ -166,3 +166,95 @@ func TestBuildProjectContextNoCommits(t *testing.T) {
 		t.Error("expected working directory")
 	}
 }
+
+func TestDetectMainBranch_Main(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s (%v)", args, out, err)
+		}
+	}
+	run("init")
+	run("checkout", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644)
+	run("add", "f.txt")
+	run("commit", "-m", "init")
+
+	branch := detectMainBranch(dir)
+	if branch != "main" {
+		t.Errorf("expected 'main', got %q", branch)
+	}
+}
+
+func TestDetectMainBranch_Master(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s (%v)", args, out, err)
+		}
+	}
+	run("init", "--initial-branch=master")
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644)
+	run("add", "f.txt")
+	run("commit", "-m", "init")
+
+	branch := detectMainBranch(dir)
+	if branch != "master" {
+		t.Errorf("expected 'master', got %q", branch)
+	}
+}
+
+func TestDetectMainBranch_Neither(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s (%v)", args, out, err)
+		}
+	}
+	run("init", "--initial-branch=develop")
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644)
+	run("add", "f.txt")
+	run("commit", "-m", "init")
+
+	branch := detectMainBranch(dir)
+	if branch != "" {
+		t.Errorf("expected empty string, got %q", branch)
+	}
+}
+
+func TestBuildProjectContextIncludesMainBranch(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s (%v)", args, out, err)
+		}
+	}
+	run("init")
+	run("checkout", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644)
+	run("add", "f.txt")
+	run("commit", "-m", "init")
+	// Switch to feature branch
+	run("checkout", "-b", "feature/test")
+
+	result := BuildProjectContext(dir)
+	if !strings.Contains(result, "Main branch: main") {
+		t.Error("expected 'Main branch: main' in context")
+	}
+}
