@@ -324,7 +324,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	verifyState := &VerifyState{}
 
 	checkpoint := NewCheckpointInjector(cfg.CheckpointInterval)
-	summarizer := NewSummarizer(e.provider, cfg.Model, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent)
+	summarizer := NewSummarizer(e.provider, cfg.Model, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent, e.store, sessionID)
 
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {

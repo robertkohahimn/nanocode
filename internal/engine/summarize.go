@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/store"
 )
 
 const summaryPrompt = `Summarize this conversation segment concisely:
@@ -26,14 +27,16 @@ type Summarizer struct {
 	model     string // model name to use for summarization requests
 	threshold int    // message count to trigger summarization (0 = disabled)
 	keepN     int    // number of recent messages to keep unsummarized
+	store     store.Store
+	sessionID string
 }
 
 // NewSummarizer creates a Summarizer. If threshold is 0, summarization is disabled.
-func NewSummarizer(p provider.Provider, model string, threshold, keepN int) *Summarizer {
+func NewSummarizer(p provider.Provider, model string, threshold, keepN int, st store.Store, sessionID string) *Summarizer {
 	if keepN < 0 {
 		keepN = 10
 	}
-	return &Summarizer{provider: p, model: model, threshold: threshold, keepN: keepN}
+	return &Summarizer{provider: p, model: model, threshold: threshold, keepN: keepN, store: st, sessionID: sessionID}
 }
 
 // MaybeSummarize compresses messages if they exceed the threshold.
@@ -82,6 +85,14 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, messages []provider.Mes
 		}},
 	})
 	result = append(result, recent...)
+
+	// Persist summary (best-effort)
+	if s.store != nil && s.sessionID != "" {
+		if err := s.store.PersistSummary(ctx, s.sessionID, summary, len(messages), len(result)); err != nil {
+			log.Printf("engine: failed to persist summary: %v", err)
+		}
+	}
+
 	return result, nil
 }
 
