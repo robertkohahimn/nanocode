@@ -106,6 +106,20 @@ groups:    [parallel(read,glob,grep), sequential(edit), parallel(read,read), seq
 
 **Engine integration:** Extract the tool execution block (lines 401–484 of `engine.go`, ~83 lines) into a new `executeToolCalls()` function in `parallel.go`. This extraction reduces `engine.go` from 496 to ~420 lines, creating headroom for T3.4 wiring. The loop in `engine.go` calls `executeToolCalls()` which handles partitioning, parallel batches, and sequential dispatch internally.
 
+**Extraction parameter bundle:** The extracted block captures 8+ outer variables. To keep the function signature clean, define a `toolExecContext` struct:
+```go
+type toolExecContext struct {
+    engine       *Engine
+    cfg          *config.Config
+    loopDetector *LoopDetector
+    verifyState  *VerifyState
+    fc           *FailureCollector
+    logger       *EngineLogger
+    iteration    int
+}
+```
+`executeToolCalls(ctx context.Context, tec *toolExecContext, toolCalls []*provider.ToolCall) []provider.ContentBlock` takes this struct instead of 8+ individual parameters.
+
 ### Tests
 - Partitioning logic (various tool call orderings)
 - Concurrent execution (mock tools with sleep to prove parallelism)
@@ -143,8 +157,12 @@ Methods: `Start(ctx, command, timeout) (taskID, error)`, `Get(taskID)`, `ReadOut
 
 IDs: `bg_` + 8 hex chars from `crypto/rand`. Output streams to temp file under `os.TempDir()/nanocode/`.
 
+**Context parentage:** `BackgroundTaskManager` holds a root context (set at construction from `Engine`'s context). `Start()` derives child contexts from this root — not from the per-tool `ctx`. This ensures background tasks are cancelled on Ctrl+C (root cancellation) but are not tied to the per-tool-call lifecycle.
+
+**Stale file cleanup on startup:** Constructor scans `os.TempDir()/nanocode/` and removes any `bg_*` files older than 24 hours. This handles orphaned temp files from process crashes (SIGKILL, power loss) where `Cleanup()` never ran.
+
 **Lifecycle:** `Engine.Close()` calls `BackgroundTaskManager.Cleanup()` which:
-1. Cancels any still-running tasks (via stored cancel funcs from `context.WithCancel`)
+1. Cancels the root context (killing all running background tasks)
 2. Waits briefly for goroutines to exit (100ms timeout)
 3. Removes temp files for completed/cancelled tasks
 
@@ -221,3 +239,27 @@ All acceptance criteria met. No changes needed.
 - No new dependencies (all stdlib: sync, crypto/rand, os)
 - All new code has tests
 - `go test ./...` passes after each logical step
+
+## Risk Mitigations (Pre-Mortem)
+
+### Tigers Addressed:
+1. **Extraction function signature complexity** (medium)
+   - Mitigation: `toolExecContext` struct bundles 8+ captured variables into a single parameter
+   - Added to: T3.3 design section
+
+2. **Orphaned temp files on process crash** (medium)
+   - Mitigation: `BackgroundTaskManager` constructor scans and removes stale `bg_*` files >24h old
+   - Added to: T3.4 design section
+
+3. **Background goroutine context parentage** (medium)
+   - Mitigation: `BackgroundTaskManager` holds a root context from engine construction; `Start()` derives children from root, not per-tool ctx; `Cleanup()` cancels root
+   - Added to: T3.4 design section
+
+### Accepted Risks:
+1. **Parallel speedup may be negligible** (elephant, medium) — Accepted. Implementation is simple, code is cleaner with the extraction regardless, and logging will measure real-world impact.
+
+### Pre-Mortem Run:
+- Date: 2026-03-24
+- Mode: deep
+- Tigers: 3 (all medium, all mitigated)
+- Elephants: 1 (accepted)
