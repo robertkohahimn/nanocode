@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -86,4 +89,132 @@ type toolExecContext struct {
 	fc           *FailureCollector
 	logger       *EngineLogger
 	iteration    int
+}
+
+func executeToolCalls(ctx context.Context, tec *toolExecContext, toolCalls []*provider.ToolCall) []provider.ContentBlock {
+	groups := partitionToolCalls(toolCalls)
+	var resultBlocks []provider.ContentBlock
+
+	for _, group := range groups {
+		if group.parallel {
+			results := executeParallelBatch(ctx, tec.engine.tools, group.calls)
+			for i, cb := range results {
+				tc := group.calls[i]
+				isError := cb.ToolResult != nil && cb.ToolResult.IsError
+				elapsed := cb.elapsed
+				tec.logger.LogToolCall(tc.Name, elapsed, isError)
+				tec.fc.TrackTool(tc.Name)
+				tec.engine.mu.Lock()
+				tec.engine.lastRunRecords = append(tec.engine.lastRunRecords, ToolRecord{
+					Name: tc.Name, DurationMs: elapsed.Milliseconds(), IsError: isError,
+				})
+				tec.engine.mu.Unlock()
+				resultBlocks = append(resultBlocks, cb.ContentBlock)
+				if isError && !tec.cfg.DisableReflection {
+					resultBlocks = append(resultBlocks, provider.ContentBlock{
+						Type: "text", Text: errorReflectionPrompt,
+					})
+				}
+			}
+			continue
+		}
+
+		for _, tc := range group.calls {
+			blocks := executeSequentialTool(ctx, tec, tc)
+			resultBlocks = append(resultBlocks, blocks...)
+		}
+	}
+	return resultBlocks
+}
+
+func executeSequentialTool(ctx context.Context, tec *toolExecContext, tc *provider.ToolCall) []provider.ContentBlock {
+	var resultBlocks []provider.ContentBlock
+	injectWarning := func(w *LoopWarning) {
+		if !tec.cfg.DisableReflection {
+			resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: FormatWarning(w)})
+		}
+	}
+
+	if tc.Name == "edit" || tc.Name == "write" {
+		var inp struct {
+			FilePath  string `json:"file_path"`
+			Content   string `json:"content"`
+			NewString string `json:"new_string"`
+		}
+		if err := json.Unmarshal(tc.Input, &inp); err != nil {
+			tec.logger.LogToolCall(tc.Name, 0, true)
+			resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
+				ToolCallID: tc.ID, Content: fmt.Sprintf("Failed to parse %s input: %v", tc.Name, err), IsError: true,
+			}})
+			if !tec.cfg.DisableReflection {
+				resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
+			}
+			return resultBlocks
+		}
+		if inp.FilePath != "" {
+			key := filepath.Clean(inp.FilePath)
+			if tec.cfg.ProjectDir != "" && !filepath.IsAbs(key) {
+				key = filepath.Clean(filepath.Join(tec.cfg.ProjectDir, key))
+			}
+			editContent := inp.Content
+			if tc.Name == "edit" {
+				editContent = inp.NewString
+			}
+			if w := tec.loopDetector.CheckEdit(key, editContent); w != nil {
+				if w.Type == "edit_count" {
+					tec.logger.LogToolCall(tc.Name, 0, true)
+					tec.logger.LogDoomLoop(key, tec.loopDetector.editCounts[key])
+					tec.fc.TrackFile(key)
+					tec.fc.Record(ctx, FailureDoomLoop, fmt.Sprintf("file %s edited too many times", key), tec.iteration+1)
+					resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
+						ToolCallID: tc.ID, Content: w.Detail, IsError: true,
+					}})
+					injectWarning(w)
+					return resultBlocks
+				}
+				injectWarning(w)
+			}
+		}
+	}
+	if tc.Name == "bash" {
+		var inp struct{ Command string `json:"command"` }
+		if err := json.Unmarshal(tc.Input, &inp); err == nil && inp.Command != "" {
+			if w := tec.loopDetector.CheckCommand(inp.Command); w != nil {
+				injectWarning(w)
+			}
+		}
+	}
+	toolStart := time.Now()
+	result := tec.engine.tools.Execute(ctx, tc)
+	elapsed := time.Since(toolStart)
+	tec.logger.LogToolCall(tc.Name, elapsed, result.IsError)
+	tec.fc.TrackTool(tc.Name)
+	tec.engine.mu.Lock()
+	tec.engine.lastRunRecords = append(tec.engine.lastRunRecords, ToolRecord{
+		Name: tc.Name, DurationMs: elapsed.Milliseconds(), IsError: result.IsError,
+	})
+	tec.engine.mu.Unlock()
+	resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: result})
+	if !result.IsError {
+		if tc.Name == "edit" || tc.Name == "write" {
+			var inp struct{ FilePath string `json:"file_path"` }
+			if json.Unmarshal(tc.Input, &inp) == nil && inp.FilePath != "" {
+				tec.verifyState.MarkEdit(inp.FilePath)
+			}
+		}
+		if tc.Name == "bash" {
+			var inp struct{ Command string `json:"command"` }
+			if json.Unmarshal(tc.Input, &inp) == nil && IsVerifyCommand(inp.Command) {
+				tec.verifyState.MarkVerified()
+			}
+		}
+	}
+	if result.IsError && !tec.cfg.DisableReflection {
+		if w := tec.loopDetector.CheckError(result.Content); w != nil {
+			injectWarning(w)
+		} else {
+			resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
+		}
+	}
+	return resultBlocks
 }
