@@ -1,7 +1,11 @@
 package engine
 
 import (
+	"context"
+	"encoding/json"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
 )
@@ -75,6 +79,74 @@ func TestPartitionToolCalls_Empty(t *testing.T) {
 	groups := partitionToolCalls(nil)
 	if groups != nil {
 		t.Fatalf("expected nil, got %v", groups)
+	}
+}
+
+type sleepTool struct {
+	name     string
+	duration time.Duration
+	calls    atomic.Int32
+}
+
+func (s *sleepTool) Name() string { return s.name }
+func (s *sleepTool) Definition() provider.ToolDef {
+	return provider.ToolDef{Name: s.name, InputSchema: json.RawMessage(`{}`)}
+}
+func (s *sleepTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	s.calls.Add(1)
+	time.Sleep(s.duration)
+	return "ok", nil
+}
+
+func TestExecuteParallelBatch(t *testing.T) {
+	st := &sleepTool{name: "read", duration: 50 * time.Millisecond}
+	reg := NewToolRegistry(st)
+
+	calls := []*provider.ToolCall{
+		{ID: "1", Name: "read", Input: json.RawMessage(`{}`)},
+		{ID: "2", Name: "read", Input: json.RawMessage(`{}`)},
+		{ID: "3", Name: "read", Input: json.RawMessage(`{}`)},
+	}
+
+	start := time.Now()
+	results := executeParallelBatch(context.Background(), reg, calls)
+	elapsed := time.Since(start)
+
+	if elapsed > 120*time.Millisecond {
+		t.Errorf("expected parallel execution, took %v", elapsed)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.ToolResult == nil || r.ToolResult.ToolCallID != calls[i].ID {
+			t.Errorf("result %d: expected tool call ID %s", i, calls[i].ID)
+		}
+		if r.elapsed == 0 {
+			t.Errorf("result %d: expected non-zero elapsed time", i)
+		}
+	}
+	if st.calls.Load() != 3 {
+		t.Errorf("expected 3 tool calls, got %d", st.calls.Load())
+	}
+}
+
+func TestExecuteParallelBatch_OrderPreserved(t *testing.T) {
+	fast := &sleepTool{name: "read", duration: 10 * time.Millisecond}
+	slow := &sleepTool{name: "glob", duration: 50 * time.Millisecond}
+	reg := NewToolRegistry(fast, slow)
+
+	calls := []*provider.ToolCall{
+		{ID: "slow", Name: "glob", Input: json.RawMessage(`{}`)},
+		{ID: "fast", Name: "read", Input: json.RawMessage(`{}`)},
+	}
+
+	results := executeParallelBatch(context.Background(), reg, calls)
+	if results[0].ToolResult.ToolCallID != "slow" {
+		t.Error("expected first result to be 'slow' (order preserved)")
+	}
+	if results[1].ToolResult.ToolCallID != "fast" {
+		t.Error("expected second result to be 'fast' (order preserved)")
 	}
 }
 
