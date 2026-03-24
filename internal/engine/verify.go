@@ -62,9 +62,37 @@ func isCommandDelimiter(b byte) bool {
 }
 
 // containsChainOperator returns true if the command string contains shell
-// chaining operators (;, |, &, &&, ||) that could allow command injection.
+// chaining operators (;, |, &, &&, ||) outside of quoted strings.
 func containsChainOperator(cmd string) bool {
-	return strings.ContainsAny(cmd, ";|&")
+	inSingle := false
+	inDouble := false
+	escaped := false
+	for i := 0; i < len(cmd); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch cmd[i] {
+		case '\\':
+			// Backslash escapes only apply outside single quotes
+			if !inSingle {
+				escaped = true
+			}
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case ';', '|', '&':
+			if !inSingle && !inDouble {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // IsVerifyCommand checks if a bash command is a verification command.

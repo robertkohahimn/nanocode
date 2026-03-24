@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -47,12 +46,14 @@ type Engine struct {
 	config           *config.Config
 	mcpClients       []io.Closer       // MCP subprocess handles
 	snapMgr          *snapshot.Manager  // nil if no project dir
-	mu               sync.Mutex        // protects lastRunRecords
+	mu               sync.Mutex        // protects lastRunRecords, currentSessionID
 	lastRunRecords   []ToolRecord
 	currentSessionID string // set per Run/Resume for task tools
 	bashTool         *tool.BashTool         // for batch confirmation
 	permChecker      *permission.Checker    // for batch confirmation (nil if no perm config)
 	stdinReader      *bufio.Reader          // for batch confirmation (nil in auto-confirm)
+	bgTasks          *tool.BackgroundTaskManager
+	bgCancel         context.CancelFunc
 }
 
 // New creates an Engine with the given dependencies.
@@ -67,6 +68,10 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 			return true
 		}
 	}
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgTasks := tool.NewBackgroundTaskManager(bgCtx)
+	bashTool.BackgroundTasks = bgTasks
 
 	// Permission system: wire allow/deny/autoApprove into bash confirm hook
 	var permChecker *permission.Checker
@@ -136,15 +141,22 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		bashTool:    bashTool,
 		permChecker: permChecker,
 		stdinReader: batchReader,
+		bgTasks:     bgTasks,
+		bgCancel:    bgCancel,
 	}
 
-	getSessionID := func() string { return eng.currentSessionID }
+	getSessionID := func() string {
+		eng.mu.Lock()
+		defer eng.mu.Unlock()
+		return eng.currentSessionID
+	}
 	allTools = append(allTools,
 		&tool.TaskCreateTool{Store: s, GetSessionID: getSessionID},
 		&tool.TaskUpdateTool{Store: s, GetSessionID: getSessionID},
 		&tool.TaskListTool{Store: s, GetSessionID: getSessionID},
 		&tool.TaskGetTool{Store: s, GetSessionID: getSessionID},
 	)
+	allTools = append(allTools, &tool.TaskOutputTool{Manager: bgTasks})
 
 	subagentTool := &tool.SubagentTool{Runner: eng}
 	allTools = append(allTools, subagentTool)
@@ -155,6 +167,12 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 
 // Close shuts down MCP subprocesses. Must be called on exit.
 func (e *Engine) Close() {
+	if e.bgCancel != nil {
+		e.bgCancel()
+	}
+	if e.bgTasks != nil {
+		e.bgTasks.Cleanup()
+	}
 	for _, c := range e.mcpClients {
 		c.Close()
 	}
@@ -221,7 +239,9 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 
 // Run starts a conversation from the user's initial prompt.
 func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.mu.Lock()
 	e.currentSessionID = sessionID
+	e.mu.Unlock()
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}
@@ -240,7 +260,9 @@ func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEve
 
 // Resume continues an existing session with a new user message.
 func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.mu.Lock()
 	e.currentSessionID = sessionID
+	e.mu.Unlock()
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}
@@ -310,7 +332,7 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 	verifyState := &VerifyState{}
 
 	checkpoint := NewCheckpointInjector(cfg.CheckpointInterval)
-	summarizer := NewSummarizer(e.provider, cfg.Model, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent)
+	summarizer := NewSummarizer(e.provider, cfg.Model, cfg.SummarizeThreshold, cfg.SummarizeKeepRecent, e.store, sessionID)
 
 	for iterations = 0; iterations < maxIterations; iterations++ {
 		if ctx.Err() != nil {
@@ -391,97 +413,17 @@ func (e *Engine) loop(ctx context.Context, sessionID string, messages []provider
 			}
 		}
 
-		// Execute tools with semantic doom loop detection
-		var resultBlocks []provider.ContentBlock
-		injectWarning := func(w *LoopWarning) {
-			if !cfg.DisableReflection {
-				resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: FormatWarning(w)})
-			}
+		// Execute tools: read-only in parallel, mutating sequentially
+		tec := &toolExecContext{
+			engine:       e,
+			cfg:          cfg,
+			loopDetector: loopDetector,
+			verifyState:  verifyState,
+			fc:           fc,
+			logger:       logger,
+			iteration:    iterations,
 		}
-		for _, tc := range toolCalls {
-			if tc.Name == "edit" || tc.Name == "write" {
-				var inp struct {
-					FilePath  string `json:"file_path"`
-					Content   string `json:"content"`
-					NewString string `json:"new_string"`
-				}
-				if err := json.Unmarshal(tc.Input, &inp); err != nil {
-					logger.LogToolCall(tc.Name, 0, true)
-					resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
-						ToolCallID: tc.ID, Content: fmt.Sprintf("Failed to parse %s input: %v", tc.Name, err), IsError: true,
-					}})
-					if !cfg.DisableReflection {
-						resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
-					}
-					continue
-				}
-				if inp.FilePath != "" {
-					key := filepath.Clean(inp.FilePath)
-					if cfg.ProjectDir != "" && !filepath.IsAbs(key) {
-						key = filepath.Clean(filepath.Join(cfg.ProjectDir, key))
-					}
-					editContent := inp.Content
-					if tc.Name == "edit" {
-						editContent = inp.NewString
-					}
-					if w := loopDetector.CheckEdit(key, editContent); w != nil {
-						if w.Type == "edit_count" {
-							logger.LogToolCall(tc.Name, 0, true)
-							logger.LogDoomLoop(key, loopDetector.editCounts[key])
-							fc.TrackFile(key)
-							fc.Record(ctx, FailureDoomLoop, fmt.Sprintf("file %s edited too many times", key), iterations+1)
-							resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: &provider.ToolResult{
-								ToolCallID: tc.ID, Content: w.Detail, IsError: true,
-							}})
-							injectWarning(w)
-							continue
-						}
-						injectWarning(w)
-					}
-				}
-			}
-			if tc.Name == "bash" {
-				var inp struct{ Command string `json:"command"` }
-				if err := json.Unmarshal(tc.Input, &inp); err == nil && inp.Command != "" {
-					if w := loopDetector.CheckCommand(inp.Command); w != nil {
-						injectWarning(w)
-					}
-				}
-			}
-			toolStart := time.Now()
-			result := e.tools.Execute(ctx, tc)
-			elapsed := time.Since(toolStart)
-			logger.LogToolCall(tc.Name, elapsed, result.IsError)
-			fc.TrackTool(tc.Name)
-			e.mu.Lock()
-			e.lastRunRecords = append(e.lastRunRecords, ToolRecord{
-				Name: tc.Name, DurationMs: elapsed.Milliseconds(), IsError: result.IsError,
-			})
-			e.mu.Unlock()
-			resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "tool_result", ToolResult: result})
-			// Track verification state
-			if !result.IsError {
-				if tc.Name == "edit" || tc.Name == "write" {
-					var inp struct{ FilePath string `json:"file_path"` }
-					if json.Unmarshal(tc.Input, &inp) == nil && inp.FilePath != "" {
-						verifyState.MarkEdit(inp.FilePath)
-					}
-				}
-				if tc.Name == "bash" {
-					var inp struct{ Command string `json:"command"` }
-					if json.Unmarshal(tc.Input, &inp) == nil && IsVerifyCommand(inp.Command) {
-						verifyState.MarkVerified()
-					}
-				}
-			}
-			if result.IsError && !cfg.DisableReflection {
-				if w := loopDetector.CheckError(result.Content); w != nil {
-					injectWarning(w)
-				} else {
-					resultBlocks = append(resultBlocks, provider.ContentBlock{Type: "text", Text: errorReflectionPrompt})
-				}
-			}
-		}
+		resultBlocks := executeToolCalls(ctx, tec, toolCalls)
 
 		resultMsg := provider.Message{Role: provider.RoleUser, Content: resultBlocks}
 

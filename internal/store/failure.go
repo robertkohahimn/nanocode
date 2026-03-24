@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,6 +104,9 @@ func (s *SQLiteStore) GetFailure(ctx context.Context, id string) (*FailureRecord
 	).Scan(&r.ID, &r.SessionID, &r.Timestamp, &r.FailureType,
 		&r.Description, &r.ToolsUsed, &r.FilesTouched, &r.Iterations, &r.Notes)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("failure %s: %w", id, ErrFailureNotFound)
+		}
 		return nil, fmt.Errorf("getting failure %s: %w", id, err)
 	}
 	return &r, nil

@@ -177,6 +177,8 @@ func (o *OpenAI) streamEvents(body io.ReadCloser, ch chan<- Event) {
 					},
 				}
 			}
+			// Clear accumulators to prevent duplicate emission if more chunks arrive
+			toolAccumulators = make(map[int]*toolCallBuilder)
 		}
 	}
 }

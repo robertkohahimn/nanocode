@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/robertkohahimn/nanocode/internal/provider"
+	"github.com/robertkohahimn/nanocode/internal/store"
 )
 
 func makeMsgs(n int) []provider.Message {
@@ -25,7 +26,7 @@ func makeMsgs(n int) []provider.Message {
 }
 
 func TestSummarizerBelowThreshold(t *testing.T) {
-	s := NewSummarizer(nil, "test-model", 30, 10)
+	s := NewSummarizer(nil, "test-model", 30, 10, nil, "")
 	msgs := makeMsgs(20)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -37,7 +38,7 @@ func TestSummarizerBelowThreshold(t *testing.T) {
 }
 
 func TestSummarizerDisabled(t *testing.T) {
-	s := NewSummarizer(nil, "test-model", 0, 10)
+	s := NewSummarizer(nil, "test-model", 0, 10, nil, "")
 	msgs := makeMsgs(50)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -57,7 +58,7 @@ func TestSummarizerTriggersAboveThreshold(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, "test-model", 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10, nil, "")
 	msgs := makeMsgs(35)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -96,7 +97,7 @@ func TestSummarizerFallbackOnError(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, "test-model", 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10, nil, "")
 	msgs := makeMsgs(50) // >40 so windowMessages actually truncates
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -117,7 +118,7 @@ func TestSummarizerPreservesRecentMessages(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, "test-model", 30, 10)
+	s := NewSummarizer(mp, "test-model", 30, 10, nil, "")
 	msgs := makeMsgs(40)
 	result, err := s.MaybeSummarize(context.Background(), msgs)
 	if err != nil {
@@ -143,7 +144,7 @@ func TestSummarizerWithExistingSummary(t *testing.T) {
 			},
 		},
 	}
-	s := NewSummarizer(mp, "test-model", 10, 5)
+	s := NewSummarizer(mp, "test-model", 10, 5, nil, "")
 
 	msgs := makeMsgs(15)
 	msgs[1] = provider.Message{
@@ -162,5 +163,55 @@ func TestSummarizerWithExistingSummary(t *testing.T) {
 	// Should still produce a valid result: first + summary + 5 recent = 7
 	if len(result) != 7 {
 		t.Errorf("expected 7 messages, got %d", len(result))
+	}
+}
+
+func TestSummarizerPersistsToStore(t *testing.T) {
+	st, err := store.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	sessionID, _ := st.CreateSession(ctx, "/tmp")
+
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventTextDelta, Text: "Summary: things happened."},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+	s := NewSummarizer(mp, "test-model", 30, 10, st, sessionID)
+	msgs := makeMsgs(35)
+	result, err := s.MaybeSummarize(ctx, msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify summarization happened (first + summary + 10 recent = 12)
+	if len(result) != 12 {
+		t.Errorf("expected 12 messages, got %d", len(result))
+	}
+}
+
+func TestSummarizerNilStoreDoesNotPanic(t *testing.T) {
+	mp := &mockProvider{
+		responses: [][]provider.Event{
+			{
+				{Type: provider.EventTextDelta, Text: "Summary."},
+				{Type: provider.EventDone},
+			},
+		},
+	}
+	s := NewSummarizer(mp, "test-model", 30, 10, nil, "")
+	msgs := makeMsgs(35)
+	result, err := s.MaybeSummarize(context.Background(), msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 12 {
+		t.Errorf("expected 12 messages, got %d", len(result))
 	}
 }

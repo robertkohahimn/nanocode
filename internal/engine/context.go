@@ -49,6 +49,12 @@ func BuildProjectContext(projectDir string) string {
 			sb.WriteString("\n\n")
 		}
 
+		if mainBranch := detectMainBranch(projectDir); mainBranch != "" {
+			sb.WriteString("Main branch: ")
+			sb.WriteString(escapeXML(mainBranch))
+			sb.WriteString("\n\n")
+		}
+
 		if status := gitCommand(projectDir, "status", "--short"); status != "" {
 			lines := strings.Split(status, "\n")
 			if len(lines) > maxStatusLines {
@@ -118,4 +124,24 @@ func gitCommand(dir string, args ...string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// detectMainBranch returns the name of the main/default branch.
+// Checks for "main", then "master", then remote HEAD.
+func detectMainBranch(dir string) string {
+	if gitCommand(dir, "rev-parse", "--verify", "main") != "" {
+		return "main"
+	}
+	if gitCommand(dir, "rev-parse", "--verify", "master") != "" {
+		return "master"
+	}
+	// Try remote HEAD
+	ref := gitCommand(dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if ref != "" {
+		parts := strings.Split(ref, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+	return ""
 }

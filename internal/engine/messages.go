@@ -33,9 +33,16 @@ func windowMessages(msgs []provider.Message, maxN int) []provider.Message {
 		}
 	}
 
-	result := make([]provider.Message, 0, 1+len(msgs)-startIdx)
+	tail := msgs[startIdx:]
+	// Cap to maxN total (first message + tail).
+	// Keep the most recent messages to maintain recency bias.
+	if 1+len(tail) > maxN {
+		keep := maxN - 1
+		tail = tail[len(tail)-keep:]
+	}
+	result := make([]provider.Message, 0, 1+len(tail))
 	result = append(result, msgs[0])
-	result = append(result, msgs[startIdx:]...)
+	result = append(result, tail...)
 	return result
 }
 

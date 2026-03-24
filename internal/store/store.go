@@ -32,6 +32,7 @@ type Store interface {
 	ListFailures(ctx context.Context, since int64, limit int) ([]FailureRecord, error)
 	GetFailure(ctx context.Context, id string) (*FailureRecord, error)
 	AnnotateFailure(ctx context.Context, id string, failureType string, notes string) error
+	PersistSummary(ctx context.Context, sessionID, summary string, originalCount, resultCount int) error
 	Close() error
 }
 
@@ -282,4 +283,17 @@ func (s *SQLiteStore) ListSnapshots(ctx context.Context, sessionID string) ([]Sn
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *SQLiteStore) PersistSummary(ctx context.Context, sessionID, summary string, originalCount, resultCount int) error {
+	id := uuid.New().String()
+	now := time.Now().Unix()
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO summaries (id, session_id, summary_text, original_count, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, sessionID, summary, originalCount, resultCount, now,
+	)
+	if err != nil {
+		return fmt.Errorf("persisting summary: %w", err)
+	}
+	return nil
 }
