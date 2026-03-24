@@ -51,6 +51,7 @@ func loadMCPTools(cfg *config.Config) ([]tool.Tool, []io.Closer) {
 			err := client.Initialize(initCtx)
 			cancel()
 			if err != nil {
+				client.Close()
 				log.Printf("mcp: failed to initialize %s: %v", name, err)
 				continue
 			}
@@ -58,6 +59,7 @@ func loadMCPTools(cfg *config.Config) ([]tool.Tool, []io.Closer) {
 			tools, err := client.ListTools(listCtx)
 			cancel()
 			if err != nil {
+				client.Close()
 				log.Printf("mcp: failed to list tools from %s: %v", name, err)
 				continue
 			}

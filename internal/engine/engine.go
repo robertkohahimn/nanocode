@@ -46,7 +46,7 @@ type Engine struct {
 	config           *config.Config
 	mcpClients       []io.Closer       // MCP subprocess handles
 	snapMgr          *snapshot.Manager  // nil if no project dir
-	mu               sync.Mutex        // protects lastRunRecords
+	mu               sync.Mutex        // protects lastRunRecords, currentSessionID
 	lastRunRecords   []ToolRecord
 	currentSessionID string // set per Run/Resume for task tools
 	bashTool         *tool.BashTool         // for batch confirmation
@@ -145,7 +145,11 @@ func New(p provider.Provider, s store.Store, cfg *config.Config, stdinReader *bu
 		bgCancel:    bgCancel,
 	}
 
-	getSessionID := func() string { return eng.currentSessionID }
+	getSessionID := func() string {
+		eng.mu.Lock()
+		defer eng.mu.Unlock()
+		return eng.currentSessionID
+	}
 	allTools = append(allTools,
 		&tool.TaskCreateTool{Store: s, GetSessionID: getSessionID},
 		&tool.TaskUpdateTool{Store: s, GetSessionID: getSessionID},
@@ -235,7 +239,9 @@ func (e *Engine) RunSubagent(ctx context.Context, systemPrompt, task string, onE
 
 // Run starts a conversation from the user's initial prompt.
 func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.mu.Lock()
 	e.currentSessionID = sessionID
+	e.mu.Unlock()
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}
@@ -254,7 +260,9 @@ func (e *Engine) Run(ctx context.Context, sessionID string, prompt string, onEve
 
 // Resume continues an existing session with a new user message.
 func (e *Engine) Resume(ctx context.Context, sessionID string, prompt string, onEvent func(provider.Event)) error {
+	e.mu.Lock()
 	e.currentSessionID = sessionID
+	e.mu.Unlock()
 	if e.snapMgr != nil {
 		e.snapMgr.SetSession(sessionID)
 	}

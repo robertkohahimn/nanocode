@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -90,7 +91,12 @@ func ValidatePath(filePath, baseDir string) error {
 	// Resolve the parent directory of the target (the file may not exist yet).
 	resolvedDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
 	if err != nil {
-		return fmt.Errorf("resolving path: %w", err)
+		if os.IsNotExist(err) {
+			// Parent doesn't exist yet (new file in new dir); use unresolved path.
+			resolvedDir = filepath.Dir(abs)
+		} else {
+			return fmt.Errorf("resolving path: %w", err)
+		}
 	}
 	resolved := filepath.Join(resolvedDir, filepath.Base(abs))
 

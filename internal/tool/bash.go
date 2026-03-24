@@ -78,6 +78,8 @@ func (t *BashTool) ClearConfirmOverrides() {
 }
 
 func (t *BashTool) SetToolCallIDGetter(fn func(ctx context.Context) string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.getToolCallID = fn
 }
 
@@ -154,8 +156,11 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		}
 	}
 	t.mu.RUnlock()
-	if overrides != nil && t.getToolCallID != nil {
-		if toolCallID := t.getToolCallID(ctx); toolCallID != "" {
+	t.mu.RLock()
+	getter := t.getToolCallID
+	t.mu.RUnlock()
+	if overrides != nil && getter != nil {
+		if toolCallID := getter(ctx); toolCallID != "" {
 			if override, ok := overrides[toolCallID]; ok {
 				if override.skipped {
 					return "Command skipped (user selected others from batch)", nil

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/robertkohahimn/nanocode/internal/store"
@@ -24,6 +25,7 @@ const (
 type FailureCollector struct {
 	store     store.Store
 	sessionID string
+	mu        sync.Mutex
 	toolsUsed map[string]bool
 	fileEdits map[string]bool
 }
@@ -47,7 +49,9 @@ func (fc *FailureCollector) TrackTool(name string) {
 	if fc == nil || name == "" {
 		return
 	}
+	fc.mu.Lock()
 	fc.toolsUsed[name] = true
+	fc.mu.Unlock()
 }
 
 // TrackFile records that a file was edited during this run.
@@ -55,7 +59,9 @@ func (fc *FailureCollector) TrackFile(path string) {
 	if fc == nil || path == "" {
 		return
 	}
+	fc.mu.Lock()
 	fc.fileEdits[path] = true
+	fc.mu.Unlock()
 }
 
 // Record persists a failure event to the store.
@@ -64,6 +70,7 @@ func (fc *FailureCollector) Record(ctx context.Context, failType FailureType, de
 		return
 	}
 
+	fc.mu.Lock()
 	tools := make([]string, 0, len(fc.toolsUsed))
 	for t := range fc.toolsUsed {
 		tools = append(tools, t)
@@ -72,6 +79,7 @@ func (fc *FailureCollector) Record(ctx context.Context, failType FailureType, de
 	for f := range fc.fileEdits {
 		files = append(files, f)
 	}
+	fc.mu.Unlock()
 
 	rec := &store.FailureRecord{
 		SessionID:    fc.sessionID,
